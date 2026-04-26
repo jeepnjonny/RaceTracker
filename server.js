@@ -50,6 +50,23 @@ raceRouter.use('/messages',     require('./src/routes/messages'));
 raceRouter.use('/weather',      require('./src/routes/weather'));
 app.use('/api/races/:raceId', raceRouter);
 
+// ── Global settings ───────────────────────────────────────────────────────────
+app.get('/api/settings', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const data = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  res.json({ ok: true, data });
+});
+
+app.put('/api/settings', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  const upsert = db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  const tx = db.transaction(entries => { for (const [k, v] of entries) upsert.run(k, v ?? null); });
+  tx(Object.entries(req.body));
+  res.json({ ok: true });
+});
+
 // MQTT status & control
 app.get('/api/mqtt/status', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ ok: false, error: 'Not authenticated' });

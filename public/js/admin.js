@@ -11,6 +11,7 @@ const TABS = [
   { id: 'personnel', label: 'PERSONNEL' },
   { id: 'infra',     label: 'INFRASTRUCTURE' },
   { id: 'users',     label: 'USERS' },
+  { id: 'settings',  label: 'SETTINGS' },
 ];
 let currentTab = 'races';
 
@@ -79,6 +80,7 @@ function renderTab() {
     case 'personnel': el.innerHTML = renderPersonnelTab(); bindPersonnelTab(); break;
     case 'infra':     el.innerHTML = renderInfraTab(); refreshInfra(); break;
     case 'users':     el.innerHTML = renderUsersTab(); loadUsers(); break;
+    case 'settings':  el.innerHTML = renderSettingsTab(); bindSettingsTab(); break;
   }
 }
 
@@ -156,7 +158,7 @@ async function genViewerToken(id) {
 }
 
 function copyViewerLink(token) {
-  const url = `${location.origin}/view/${token}`;
+  const url = `${location.origin}${RT.BASE}view/${token}`;
   navigator.clipboard.writeText(url).then(() => RT.toast('Viewer URL copied to clipboard', 'ok'));
 }
 
@@ -192,19 +194,16 @@ function openRaceModal(id) {
   document.getElementById('rm-mqtt-channel').value   = race?.mqtt_channel || 'RaceTracker';
   document.getElementById('rm-mqtt-format').value    = race?.mqtt_format || 'json';
   document.getElementById('rm-mqtt-psk').value       = race?.mqtt_psk || 'AQ==';
-  document.getElementById('rm-time-format').value    = race?.time_format || '12h';
-  document.getElementById('rm-missing-timer').value  = race?.missing_timer || 3600;
+  document.getElementById('rm-time-format').value    = race?.time_format || '24h';
+  document.getElementById('rm-missing-timer').value  = Math.round((race?.missing_timer || 3600) / 60);
   document.getElementById('rm-geofence').value       = race?.geofence_radius || 15;
   document.getElementById('rm-off-course').value     = race?.off_course_distance || 100;
-  document.getElementById('rm-stopped').value        = race?.stopped_time || 600;
+  document.getElementById('rm-stopped').value        = Math.round((race?.stopped_time || 600) / 60);
   document.getElementById('rm-alerts').checked       = !!(race?.alerts_enabled ?? 1);
   document.getElementById('rm-messaging').checked    = !!(race?.messaging_enabled);
   document.getElementById('rm-viewer-map').checked   = !!(race?.viewer_map_enabled ?? 1);
   document.getElementById('rm-leaderboard').checked  = !!(race?.leaderboard_enabled ?? 1);
   document.getElementById('rm-weather').checked      = !!(race?.weather_enabled);
-  document.getElementById('rm-weather-key').value    = race?.weather_api_key || '';
-  document.getElementById('rm-weather-lat').value    = race?.weather_lat || '';
-  document.getElementById('rm-weather-lon').value    = race?.weather_lon || '';
   document.getElementById('race-modal').classList.remove('hidden');
 }
 
@@ -221,18 +220,15 @@ async function saveRace() {
     mqtt_format:         document.getElementById('rm-mqtt-format').value,
     mqtt_psk:            document.getElementById('rm-mqtt-psk').value.trim(),
     time_format:         document.getElementById('rm-time-format').value,
-    missing_timer:       parseInt(document.getElementById('rm-missing-timer').value),
+    missing_timer:       parseInt(document.getElementById('rm-missing-timer').value) * 60,
     geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
     off_course_distance: parseInt(document.getElementById('rm-off-course').value),
-    stopped_time:        parseInt(document.getElementById('rm-stopped').value),
+    stopped_time:        parseInt(document.getElementById('rm-stopped').value) * 60,
     alerts_enabled:      document.getElementById('rm-alerts').checked ? 1 : 0,
     messaging_enabled:   document.getElementById('rm-messaging').checked ? 1 : 0,
     viewer_map_enabled:  document.getElementById('rm-viewer-map').checked ? 1 : 0,
     leaderboard_enabled: document.getElementById('rm-leaderboard').checked ? 1 : 0,
     weather_enabled:     document.getElementById('rm-weather').checked ? 1 : 0,
-    weather_api_key:     document.getElementById('rm-weather-key').value.trim() || null,
-    weather_lat:         parseFloat(document.getElementById('rm-weather-lat').value) || null,
-    weather_lon:         parseFloat(document.getElementById('rm-weather-lon').value) || null,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId
@@ -240,8 +236,15 @@ async function saveRace() {
     : await RT.post('/api/races', body);
   if (res.ok) {
     closeModal('race-modal');
-    RT.toast(editingRaceId ? 'Race updated' : 'Race created', 'ok');
-    await loadRaces(); renderTab();
+    if (!editingRaceId && res.data?.id) {
+      selectedRaceId = res.data.id;
+      await loadRaces();
+      showTab('stations');
+      RT.toast('Race created — set up track and aid stations below', 'ok');
+    } else {
+      RT.toast('Race updated', 'ok');
+      await loadRaces(); renderTab();
+    }
   } else RT.toast(res.error, 'warn');
 }
 
@@ -389,34 +392,61 @@ function renderStationsTab() {
     <div id="stations-list"></div>
   </div>
   <div id="csv-import-panel" class="hidden card">
-    <h3>CSV IMPORT</h3>
-    <div class="text-dim" style="font-size:11px;margin-bottom:8px">Columns: name, lat, lon, type (start/finish/aid/checkpoint), cutoff_time</div>
-    <textarea id="csv-input" placeholder="Paste CSV here..." style="height:120px"></textarea>
+    <h3 id="csv-import-title">CSV IMPORT</h3>
+    <div class="text-dim" id="csv-import-hint" style="font-size:11px;margin-bottom:8px"></div>
+    <div class="upload-zone" onclick="document.getElementById('csv-file-input').click()" id="csv-drop-zone">
+      <div id="csv-file-label">&#8593; Click to select CSV file</div>
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="csvFileSelected(this)">
+    </div>
     <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="primary" onclick="importCsv()">IMPORT</button>
+      <button class="primary" onclick="importCsv()" id="csv-import-btn" disabled>IMPORT</button>
       <button onclick="document.getElementById('csv-import-panel').classList.add('hidden')">CANCEL</button>
     </div>
   </div>`;
 }
 
-let csvImportTarget = '';
+let csvImportTarget = '', csvFileContent = '';
+const CSV_HINTS = {
+  stations:     'Columns: name, lat, lon, type (start/finish/aid/checkpoint), cutoff_time',
+  participants: 'Columns: bib, name, tracker_id, heat, class, age, phone, emergency_contact',
+  personnel:    'Columns: name, station_name, tracker_id, phone',
+};
+
 function showCsvImport(target) {
   csvImportTarget = target;
+  csvFileContent = '';
+  document.getElementById('csv-file-label').textContent = '↑ Click to select CSV file';
+  document.getElementById('csv-import-btn').disabled = true;
+  document.getElementById('csv-import-title').textContent = 'CSV IMPORT — ' + target.toUpperCase();
+  document.getElementById('csv-import-hint').textContent = CSV_HINTS[target] || '';
   document.getElementById('csv-import-panel').classList.remove('hidden');
 }
 
+function csvFileSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    csvFileContent = e.target.result;
+    document.getElementById('csv-file-label').textContent = `✓ ${file.name}`;
+    document.getElementById('csv-import-btn').disabled = false;
+  };
+  reader.readAsText(file);
+}
+
 async function importCsv() {
-  const csv = document.getElementById('csv-input').value.trim();
-  if (!csv) return;
+  if (!csvFileContent) return;
   const url = csvImportTarget === 'stations'
     ? `/api/races/${selectedRaceId}/stations/import`
+    : csvImportTarget === 'personnel'
+    ? `/api/races/${selectedRaceId}/personnel/import`
     : `/api/races/${selectedRaceId}/participants/import`;
-  const res = await RT.post(url, { csv });
+  const res = await RT.post(url, { csv: csvFileContent });
   if (res.ok) {
-    RT.toast(`Imported successfully`, 'ok');
-    document.getElementById('csv-input').value = '';
+    RT.toast('Imported successfully', 'ok');
     document.getElementById('csv-import-panel').classList.add('hidden');
-    csvImportTarget === 'stations' ? loadStations() : null;
+    if (csvImportTarget === 'stations') loadStations();
+    else if (csvImportTarget === 'personnel') loadPersonnel();
   } else RT.toast(res.error, 'warn');
 }
 
@@ -530,9 +560,21 @@ function renderPersonnelTab() {
     <h3>AID STATION PERSONNEL</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="primary" onclick="addPersonnel()">+ ADD PERSON</button>
-      <button onclick="importPersonnelCsv()">CSV IMPORT</button>
+      <button onclick="showCsvImport('personnel')">CSV IMPORT</button>
     </div>
     <div id="personnel-list"></div>
+  </div>
+  <div id="csv-import-panel" class="hidden card">
+    <h3 id="csv-import-title">CSV IMPORT</h3>
+    <div class="text-dim" id="csv-import-hint" style="font-size:11px;margin-bottom:8px"></div>
+    <div class="upload-zone" onclick="document.getElementById('csv-file-input').click()">
+      <div id="csv-file-label">&#8593; Click to select CSV file</div>
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="csvFileSelected(this)">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="primary" onclick="importCsv()" id="csv-import-btn" disabled>IMPORT</button>
+      <button onclick="document.getElementById('csv-import-panel').classList.add('hidden')">CANCEL</button>
+    </div>
   </div>`;
 }
 
@@ -590,13 +632,6 @@ async function deletePersonnel(id) {
   await loadPersonnel();
 }
 
-async function importPersonnelCsv() {
-  const csv = prompt('Paste CSV (columns: name, station_name, tracker_id, phone):');
-  if (!csv) return;
-  const res = await RT.post(`/api/races/${selectedRaceId}/personnel/import`, { csv });
-  if (res.ok) { await loadPersonnel(); RT.toast('Imported', 'ok'); }
-  else RT.toast(res.error, 'warn');
-}
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 function renderInfraTab() {
@@ -689,6 +724,32 @@ async function deleteUser(id) {
   if (!confirm('Delete this user?')) return;
   await RT.del(`/api/users/${id}`);
   await loadUsers();
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function renderSettingsTab() {
+  return `
+  <div class="card">
+    <h3>OPENWEATHER</h3>
+    <div class="form-group" style="max-width:400px">
+      <label>API KEY</label>
+      <input id="settings-weather-key" placeholder="Paste OpenWeather API key here">
+    </div>
+    <button class="primary" onclick="saveSettings()" style="margin-top:6px">SAVE</button>
+  </div>`;
+}
+
+async function bindSettingsTab() {
+  const res = await RT.get('/api/settings');
+  if (res.ok) document.getElementById('settings-weather-key').value = res.data.weather_api_key || '';
+}
+
+async function saveSettings() {
+  const res = await RT.put('/api/settings', {
+    weather_api_key: document.getElementById('settings-weather-key').value.trim() || null,
+  });
+  if (res.ok) RT.toast('Settings saved', 'ok');
+  else RT.toast(res.error, 'warn');
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

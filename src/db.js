@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS races (
   track_file          TEXT,
   track_path_index    INTEGER DEFAULT 0,
   viewer_token        TEXT    UNIQUE,
-  time_format         TEXT    DEFAULT '12h' CHECK(time_format IN ('12h','24h')),
+  time_format         TEXT    DEFAULT '24h' CHECK(time_format IN ('12h','24h')),
   geofence_radius     INTEGER DEFAULT 15,
   off_course_distance INTEGER DEFAULT 100,
   stopped_time        INTEGER DEFAULT 600,
@@ -158,6 +158,11 @@ CREATE TABLE IF NOT EXISTS events (
   manual         INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_events_race ON events(race_id, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 
 CREATE TABLE IF NOT EXISTS messages (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

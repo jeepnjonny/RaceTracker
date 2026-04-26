@@ -38,7 +38,7 @@
   <div class="pill pill-idle" id="active-race-pill">NO ACTIVE RACE</div>
   <div class="pill pill-idle" id="mqtt-pill">MQTT</div>
   <div id="topbar-right">
-    <button onclick="window.location.href='/operator.html'">OPERATOR VIEW</button>
+    <button onclick="window.location.href=RT.BASE+'operator.html'">OPERATOR VIEW</button>
     <button onclick="RT.logout()">LOGOUT</button>
   </div>
 </div>
@@ -84,14 +84,14 @@
     <div class="form-row">
       <div class="form-group">
         <label>TIME FORMAT</label>
-        <select id="rm-time-format"><option value="12h">12-Hour</option><option value="24h">24-Hour</option></select>
+        <select id="rm-time-format"><option value="12h">12-Hour</option><option value="24h" selected>24-Hour</option></select>
       </div>
-      <div class="form-group"><label>MISSING TIMER (sec)</label><input id="rm-missing-timer" value="3600" type="number"></div>
+      <div class="form-group"><label>MISSING TIMER (min)</label><input id="rm-missing-timer" value="60" type="number" min="1"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>GEOFENCE RADIUS (m)</label><input id="rm-geofence" value="15" type="number"></div>
+      <div class="form-group"><label>AID STATION AUTO LOG (m)</label><input id="rm-geofence" value="15" type="number"></div>
       <div class="form-group"><label>OFF-COURSE DISTANCE (m)</label><input id="rm-off-course" value="100" type="number"></div>
-      <div class="form-group"><label>STOPPED ALERT (sec)</label><input id="rm-stopped" value="600" type="number"></div>
+      <div class="form-group"><label>STOPPED ALERT (min)</label><input id="rm-stopped" value="10" type="number" min="1"></div>
     </div>
     <div class="section-header">FEATURES</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
@@ -100,12 +100,6 @@
       <div class="checkbox-row"><input type="checkbox" id="rm-viewer-map" checked><label for="rm-viewer-map">Viewer map</label></div>
       <div class="checkbox-row"><input type="checkbox" id="rm-leaderboard" checked><label for="rm-leaderboard">Viewer leaderboard</label></div>
       <div class="checkbox-row"><input type="checkbox" id="rm-weather"><label for="rm-weather">Weather overlay</label></div>
-    </div>
-    <div class="section-header">OPENWEATHER (optional)</div>
-    <div class="form-row">
-      <div class="form-group"><label>API KEY</label><input id="rm-weather-key" placeholder="paste key here"></div>
-      <div class="form-group"><label>LAT</label><input id="rm-weather-lat" type="number" step="any"></div>
-      <div class="form-group"><label>LON</label><input id="rm-weather-lon" type="number" step="any"></div>
     </div>
     <div class="modal-footer">
       <button onclick="closeModal('race-modal')">CANCEL</button>

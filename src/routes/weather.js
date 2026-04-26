@@ -1,8 +1,10 @@
 'use strict';
 const express = require('express');
 const https = require('https');
+const fs = require('fs');
 const db = require('../db');
 const { requireAuth } = require('../auth');
+const { parseTrack } = require('./tracks');
 const router = express.Router({ mergeParams: true });
 
 function httpGet(url) {
@@ -18,21 +20,35 @@ function httpGet(url) {
   });
 }
 
-// Current weather + alerts for the race location
+function getTrackFirstPoint(race) {
+  if (!race.track_file) return null;
+  try {
+    const text = fs.readFileSync(race.track_file, 'utf8');
+    const points = parseTrack(text, race.track_file, race.track_path_index || 0);
+    return points?.length ? { lat: points[0][0], lon: points[0][1] } : null;
+  } catch { return null; }
+}
+
 router.get('/', requireAuth, async (req, res) => {
-  const race = db.prepare('SELECT weather_api_key, weather_lat, weather_lon FROM races WHERE id=?').get(req.params.raceId);
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.raceId);
   if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
-  if (!race.weather_api_key) return res.status(400).json({ ok: false, error: 'No OpenWeather API key configured' });
-  if (!race.weather_lat || !race.weather_lon) return res.status(400).json({ ok: false, error: 'Race location not configured' });
+
+  const apiKeyRow = db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get();
+  const apiKey = apiKeyRow?.value;
+  if (!apiKey) return res.status(400).json({ ok: false, error: 'No OpenWeather API key configured in Settings' });
+
+  const trackPt = getTrackFirstPoint(race);
+  const lat = trackPt?.lat ?? race.weather_lat;
+  const lon = trackPt?.lon ?? race.weather_lon;
+  if (!lat || !lon) return res.status(400).json({ ok: false, error: 'No track or location configured for this race' });
 
   try {
-    const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${race.weather_lat}&lon=${race.weather_lon}&exclude=minutely,hourly,daily&appid=${race.weather_api_key}&units=imperial`;
+    const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,daily&appid=${apiKey}&units=imperial`;
     const data = await httpGet(url);
     res.json({ ok: true, data });
-  } catch (e) {
-    // Fallback to 2.5 API
+  } catch {
     try {
-      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${race.weather_lat}&lon=${race.weather_lon}&appid=${race.weather_api_key}&units=imperial`;
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`;
       const data = await httpGet(url);
       res.json({ ok: true, data });
     } catch (e2) {
