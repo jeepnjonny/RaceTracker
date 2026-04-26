@@ -2,24 +2,30 @@
 // Shared utilities for all dashboard pages
 
 const RT = (() => {
+  // Detect sub-path prefix (e.g. /RaceTracker/ when proxied via nginx)
+  const BASE = (() => {
+    const seg = location.pathname.split('/')[1];
+    return seg && !seg.includes('.') ? '/' + seg + '/' : '/';
+  })();
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   async function getMe() {
-    const res = await fetch('/api/auth/me');
+    const res = await fetch(BASE + 'api/auth/me');
     if (!res.ok) return null;
     const j = await res.json();
     return j.ok ? j.data : null;
   }
 
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/';
+    await fetch(BASE + 'api/auth/logout', { method: 'POST' });
+    window.location.href = BASE;
   }
 
   async function requireLogin(requiredRole) {
     const user = await getMe();
-    if (!user) { window.location.href = '/'; return null; }
+    if (!user) { window.location.href = BASE; return null; }
     if (requiredRole && user.role !== requiredRole && !(requiredRole === 'operator' && user.role === 'admin')) {
-      window.location.href = '/';
+      window.location.href = BASE;
       return null;
     }
     return user;
@@ -32,7 +38,7 @@ const RT = (() => {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-    const res = await fetch(url, opts);
+    const res = await fetch(BASE + url.replace(/^\//, ''), opts);
     return res.json();
   }
 
@@ -45,7 +51,7 @@ const RT = (() => {
   function connectWS(onMessage, tokenParam) {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const qs = tokenParam ? `?token=${tokenParam}` : '';
-    const url = `${proto}://${location.host}/ws${qs}`;
+    const url = `${proto}://${location.host}${BASE}ws${qs}`;
     let ws, reconnectTimer;
 
     function connect() {
