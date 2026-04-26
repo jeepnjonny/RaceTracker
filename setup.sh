@@ -14,17 +14,17 @@ SSL=${1:-""}
 echo "=== RaceTracker Setup ==="
 
 # ── Node.js ────────────────────────────────────────────────────────────────
-if ! command -v node &>/dev/null; then
-  echo "Node.js not found. Installing via NodeSource (v20)..."
+NODE_VER=0
+if command -v node &>/dev/null; then
+  NODE_VER=$(node -e "process.stdout.write(process.versions.node.split('.')[0])")
+fi
+
+if [ "$NODE_VER" -lt "$NODE_MIN" ]; then
+  echo "Installing Node.js 20 via NodeSource (found v${NODE_VER})..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
 
-NODE_VER=$(node -e "process.stdout.write(process.versions.node.split('.')[0])")
-if [ "$NODE_VER" -lt "$NODE_MIN" ]; then
-  echo "Node.js >= ${NODE_MIN} required (found ${NODE_VER}). Aborting."
-  exit 1
-fi
 echo "  Node.js $(node --version) OK"
 
 # ── Deploy files ───────────────────────────────────────────────────────────
