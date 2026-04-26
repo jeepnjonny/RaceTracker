@@ -147,7 +147,7 @@ const RT = (() => {
     setTimeout(() => el.remove(), duration);
   }
 
-  return { getMe, logout, requireLogin, api, get, post, put, del, connectWS,
+  return { BASE, getMe, logout, requireLogin, api, get, post, put, del, connectWS,
            fmtTime, fmtElapsed, fmtDist, fmtPace, fmtBattery, timeAgo,
            trackerIcon, SHAPES, statusBadge, toast, STATUS_COLORS };
 })();

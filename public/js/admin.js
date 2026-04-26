@@ -451,7 +451,7 @@ async function uploadTrack(input) {
   if (!file) return;
   const form = new FormData();
   form.append('track', file);
-  const res = await fetch(`/api/races/${selectedRaceId}/tracks/upload`, { method: 'POST', body: form });
+  const res = await fetch(RT.BASE + `api/races/${selectedRaceId}/tracks/upload`, { method: 'POST', body: form });
   const json = await res.json();
   if (json.ok) {
     RT.toast(`Track uploaded: ${json.data.file}`, 'ok');
