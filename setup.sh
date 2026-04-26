@@ -71,13 +71,45 @@ sudo systemctl restart racetracker
 echo "  racetracker service started"
 
 # ── nginx ──────────────────────────────────────────────────────────────────
-if [ -d /etc/nginx/sites-available ]; then
-  sudo cp "${INSTALL_DIR}/nginx-racetracker.conf" /etc/nginx/sites-available/racetracker
-  sudo ln -sf /etc/nginx/sites-available/racetracker /etc/nginx/sites-enabled/racetracker
-  sudo nginx -t && sudo systemctl reload nginx
-  echo "  nginx configured"
-else
+LOCATION_BLOCK='
+    location /RaceTracker/ {
+        proxy_pass         http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       $host;
+        proxy_set_header   X-Real-IP  $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+        proxy_buffering     off;
+    }'
+
+if [ ! -d /etc/nginx/sites-available ]; then
   echo "  nginx sites-available not found — copy nginx-racetracker.conf manually."
+else
+  # Find an existing server block for this hostname
+  EXISTING_CONF=$(grep -rl "server_name.*${HOSTNAME}" /etc/nginx/sites-enabled/ 2>/dev/null | head -1)
+
+  if [ -n "${EXISTING_CONF}" ]; then
+    # Check if our location block is already present
+    if grep -q "location /RaceTracker/" "${EXISTING_CONF}"; then
+      echo "  nginx: /RaceTracker/ location already present in ${EXISTING_CONF}"
+    else
+      echo "  nginx: injecting /RaceTracker/ location into ${EXISTING_CONF}"
+      # Insert location block before the last closing brace
+      sudo sed -i "$ s|^\s*}|${LOCATION_BLOCK}\n}|" "${EXISTING_CONF}"
+      sudo nginx -t && sudo systemctl reload nginx
+      echo "  nginx reloaded"
+    fi
+  else
+    # No existing server block — deploy our standalone config
+    echo "  nginx: no existing server block for ${HOSTNAME}, deploying standalone config"
+    sudo cp "${INSTALL_DIR}/nginx-racetracker.conf" /etc/nginx/sites-available/racetracker
+    sudo ln -sf /etc/nginx/sites-available/racetracker /etc/nginx/sites-enabled/racetracker
+    sudo nginx -t && sudo systemctl reload nginx
+    echo "  nginx configured"
+  fi
 fi
 
 # ── SSL via certbot ────────────────────────────────────────────────────────
