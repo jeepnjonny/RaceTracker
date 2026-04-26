@@ -79,7 +79,7 @@ function renderRoute() {
   // Track points sent in init via websocket participants may have last positions; no explicit track here
   // If we have trackPoints from the session, render
   if (trackPoints && trackPoints.length >= 2) {
-    routeLayer = L.polyline(trackPoints, { color: '#58a6ff', weight: 3, opacity: 0.6 }).addTo(leafletMap);
+    routeLayer = L.polyline(trackPoints, { color: '#f5a623', weight: 5, opacity: 0.85 }).addTo(leafletMap);
     leafletMap.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
   }
 }

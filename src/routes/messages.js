@@ -27,9 +27,7 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
   if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
 
   const ts = Math.floor(Date.now() / 1000);
-  const sent = mqttClient.publishMessage({
-    region: race.mqtt_region, channel: race.mqtt_channel,
-  }, to_node_id, text);
+  const sent = mqttClient.publishMessage(to_node_id, text);
 
   const result = db.prepare(`
     INSERT INTO messages (race_id, direction, to_node_id, to_name, text, timestamp)

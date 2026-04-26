@@ -10,9 +10,6 @@ const RACE_FIELDS = [
   'name','date','status','time_format','geofence_radius','off_course_distance',
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
   'viewer_map_enabled','leaderboard_enabled','weather_enabled',
-  'weather_api_key','weather_lat','weather_lon',
-  'mqtt_host','mqtt_port_ws','mqtt_port_tcp','mqtt_user','mqtt_pass',
-  'mqtt_region','mqtt_channel','mqtt_format','mqtt_psk',
 ];
 
 router.get('/', requireAuth, (req, res) => {
@@ -56,11 +53,8 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   const sets = Object.keys(updates).map(k => `${k}=?`).join(',');
   db.prepare(`UPDATE races SET ${sets} WHERE id=?`).run(...Object.values(updates), req.params.id);
 
-  // If MQTT settings changed and race is active, reconnect
-  if (race.status === 'active') {
-    const updated = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
-    if (updated.status === 'active') reconnectMqtt(updated);
-  }
+  // Reconnect MQTT if race is active (settings may have changed)
+  if (race.status === 'active') mqttClient.connectFromSettings(db);
   mqttClient.invalidateRouteCache(parseInt(req.params.id));
 
   res.json({ ok: true, data: db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id) });
@@ -81,13 +75,13 @@ router.post('/:id/activate', requireRole('admin'), (req, res) => {
 
   db.prepare("UPDATE races SET status='past' WHERE status='active'").run();
   db.prepare("UPDATE races SET status='active' WHERE id=?").run(req.params.id);
-  reconnectMqtt(db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id));
+  mqttClient.connectFromSettings(db);
   res.json({ ok: true, data: { id: race.id, status: 'active' } });
 });
 
 router.post('/:id/deactivate', requireRole('admin'), (req, res) => {
   db.prepare("UPDATE races SET status='past' WHERE id=? AND status='active'").run(req.params.id);
-  mqttClient.disconnect();
+  // MQTT stays connected — handlePosition checks for active race before recording data
   res.json({ ok: true });
 });
 
@@ -102,17 +96,12 @@ router.post('/:id/clone', requireRole('admin'), (req, res) => {
   const newRace = db.prepare(`
     INSERT INTO races (name, date, status, time_format, geofence_radius, off_course_distance,
       stopped_time, missing_timer, alerts_enabled, messaging_enabled, viewer_map_enabled,
-      leaderboard_enabled, weather_enabled, weather_api_key, weather_lat, weather_lon,
-      mqtt_host, mqtt_port_ws, mqtt_port_tcp, mqtt_user, mqtt_pass,
-      mqtt_region, mqtt_channel, mqtt_format, mqtt_psk, cloned_from)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      leaderboard_enabled, weather_enabled, cloned_from)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(name, date, 'upcoming',
     src.time_format, src.geofence_radius, src.off_course_distance,
     src.stopped_time, src.missing_timer, src.alerts_enabled, src.messaging_enabled,
-    src.viewer_map_enabled, src.leaderboard_enabled, src.weather_enabled,
-    src.weather_api_key, src.weather_lat, src.weather_lon,
-    src.mqtt_host, src.mqtt_port_ws, src.mqtt_port_tcp, src.mqtt_user, src.mqtt_pass,
-    src.mqtt_region, src.mqtt_channel, src.mqtt_format, src.mqtt_psk, src.id);
+    src.viewer_map_enabled, src.leaderboard_enabled, src.weather_enabled, src.id);
 
   const newId = newRace.lastInsertRowid;
 
@@ -155,18 +144,5 @@ router.delete('/:id/viewer-token', requireRole('admin'), (req, res) => {
   db.prepare('UPDATE races SET viewer_token=NULL WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
-
-function reconnectMqtt(race) {
-  mqttClient.connect({
-    host: race.mqtt_host,
-    portWs: race.mqtt_port_ws,
-    user: race.mqtt_user,
-    pass: race.mqtt_pass,
-    region: race.mqtt_region,
-    channel: race.mqtt_channel,
-    format: race.mqtt_format,
-    psk: race.mqtt_psk,
-  });
-}
 
 module.exports = router;

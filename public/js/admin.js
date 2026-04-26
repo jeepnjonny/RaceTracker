@@ -186,14 +186,6 @@ function openRaceModal(id) {
   document.getElementById('race-modal-title').textContent = id ? 'EDIT RACE' : 'NEW RACE';
   document.getElementById('rm-name').value           = race?.name || '';
   document.getElementById('rm-date').value           = race?.date || new Date().toISOString().split('T')[0];
-  document.getElementById('rm-mqtt-host').value      = race?.mqtt_host || 'apps.k7swi.org';
-  document.getElementById('rm-mqtt-port-ws').value   = race?.mqtt_port_ws || 9001;
-  document.getElementById('rm-mqtt-user').value      = race?.mqtt_user || 'racetracker';
-  document.getElementById('rm-mqtt-pass').value      = race?.mqtt_pass || 'racetracker';
-  document.getElementById('rm-mqtt-region').value    = race?.mqtt_region || 'US';
-  document.getElementById('rm-mqtt-channel').value   = race?.mqtt_channel || 'RaceTracker';
-  document.getElementById('rm-mqtt-format').value    = race?.mqtt_format || 'json';
-  document.getElementById('rm-mqtt-psk').value       = race?.mqtt_psk || 'AQ==';
   document.getElementById('rm-time-format').value    = race?.time_format || '24h';
   document.getElementById('rm-missing-timer').value  = Math.round((race?.missing_timer || 3600) / 60);
   document.getElementById('rm-geofence').value       = race?.geofence_radius || 15;
@@ -211,14 +203,6 @@ async function saveRace() {
   const body = {
     name:                document.getElementById('rm-name').value.trim(),
     date:                document.getElementById('rm-date').value,
-    mqtt_host:           document.getElementById('rm-mqtt-host').value.trim(),
-    mqtt_port_ws:        parseInt(document.getElementById('rm-mqtt-port-ws').value),
-    mqtt_user:           document.getElementById('rm-mqtt-user').value.trim(),
-    mqtt_pass:           document.getElementById('rm-mqtt-pass').value,
-    mqtt_region:         document.getElementById('rm-mqtt-region').value.trim(),
-    mqtt_channel:        document.getElementById('rm-mqtt-channel').value.trim(),
-    mqtt_format:         document.getElementById('rm-mqtt-format').value,
-    mqtt_psk:            document.getElementById('rm-mqtt-psk').value.trim(),
     time_format:         document.getElementById('rm-time-format').value,
     missing_timer:       parseInt(document.getElementById('rm-missing-timer').value) * 60,
     geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
@@ -730,6 +714,36 @@ async function deleteUser(id) {
 function renderSettingsTab() {
   return `
   <div class="card">
+    <h3>MQTT / DATA SOURCE</h3>
+    <div class="form-row">
+      <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
+      <div class="form-group"><label>WS PORT</label><input id="s-mqtt-port-ws" type="number" value="9001"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>USERNAME</label><input id="s-mqtt-user" placeholder="racetracker"></div>
+      <div class="form-group"><label>PASSWORD</label><input id="s-mqtt-pass" type="password"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>REGION</label><input id="s-mqtt-region" placeholder="US"></div>
+      <div class="form-group"><label>CHANNEL</label><input id="s-mqtt-channel" placeholder="LongFast"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>FORMAT</label>
+        <select id="s-mqtt-format">
+          <option value="json">JSON (unencrypted)</option>
+          <option value="proto">Encrypted Protobuf</option>
+        </select>
+      </div>
+      <div class="form-group"><label>PSK (base64)</label><input id="s-mqtt-psk" placeholder="AQ=="></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="primary" onclick="saveSettings()">SAVE</button>
+      <button onclick="testMqtt()" id="s-mqtt-test-btn">TEST CONNECTION</button>
+      <span id="s-mqtt-status" style="font-size:11px;align-self:center;color:var(--text3)"></span>
+    </div>
+  </div>
+  <div class="card">
     <h3>OPENWEATHER</h3>
     <div class="form-group" style="max-width:400px">
       <label>API KEY</label>
@@ -741,15 +755,51 @@ function renderSettingsTab() {
 
 async function bindSettingsTab() {
   const res = await RT.get('/api/settings');
-  if (res.ok) document.getElementById('settings-weather-key').value = res.data.weather_api_key || '';
+  if (!res.ok) return;
+  const s = res.data;
+  document.getElementById('s-mqtt-host').value       = s.mqtt_host || '';
+  document.getElementById('s-mqtt-port-ws').value    = s.mqtt_port_ws || '9001';
+  document.getElementById('s-mqtt-user').value       = s.mqtt_user || '';
+  document.getElementById('s-mqtt-pass').value       = s.mqtt_pass || '';
+  document.getElementById('s-mqtt-region').value     = s.mqtt_region || '';
+  document.getElementById('s-mqtt-channel').value    = s.mqtt_channel || '';
+  document.getElementById('s-mqtt-format').value     = s.mqtt_format || 'json';
+  document.getElementById('s-mqtt-psk').value        = s.mqtt_psk || '';
+  document.getElementById('settings-weather-key').value = s.weather_api_key || '';
 }
 
 async function saveSettings() {
   const res = await RT.put('/api/settings', {
+    mqtt_host:      document.getElementById('s-mqtt-host').value.trim() || null,
+    mqtt_port_ws:   document.getElementById('s-mqtt-port-ws').value || '9001',
+    mqtt_user:      document.getElementById('s-mqtt-user').value.trim() || null,
+    mqtt_pass:      document.getElementById('s-mqtt-pass').value || null,
+    mqtt_region:    document.getElementById('s-mqtt-region').value.trim() || null,
+    mqtt_channel:   document.getElementById('s-mqtt-channel').value.trim() || null,
+    mqtt_format:    document.getElementById('s-mqtt-format').value,
+    mqtt_psk:       document.getElementById('s-mqtt-psk').value.trim() || null,
     weather_api_key: document.getElementById('settings-weather-key').value.trim() || null,
   });
   if (res.ok) RT.toast('Settings saved', 'ok');
   else RT.toast(res.error, 'warn');
+}
+
+async function testMqtt() {
+  const btn = document.getElementById('s-mqtt-test-btn');
+  const status = document.getElementById('s-mqtt-status');
+  btn.disabled = true;
+  status.textContent = 'Testing...';
+  status.style.color = 'var(--text3)';
+  await saveSettings();
+  const res = await RT.post('/api/settings/mqtt-test', {});
+  btn.disabled = false;
+  if (res.ok && res.data?.connected) {
+    status.textContent = '✓ Connected';
+    status.style.color = 'var(--accent2)';
+  } else {
+    status.textContent = '✗ Failed';
+    status.style.color = 'var(--accent3)';
+  }
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

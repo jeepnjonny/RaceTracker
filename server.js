@@ -50,6 +50,19 @@ raceRouter.use('/messages',     require('./src/routes/messages'));
 raceRouter.use('/weather',      require('./src/routes/weather'));
 app.use('/api/races/:raceId', raceRouter);
 
+// ── MQTT test ─────────────────────────────────────────────────────────────────
+app.post('/api/settings/mqtt-test', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  const connected = mqttClient.connectFromSettings(db);
+  if (!connected) return res.status(400).json({ ok: false, error: 'No MQTT host configured in settings' });
+  // Give the client 2.5s to connect then report status
+  setTimeout(() => {
+    const status = mqttClient.getStatus();
+    res.json({ ok: true, data: status });
+  }, 2500);
+});
+
 // ── Global settings ───────────────────────────────────────────────────────────
 app.get('/api/settings', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ ok: false, error: 'Not authenticated' });
@@ -116,21 +129,10 @@ const server = http.createServer(app);
 const wss = wsManager.init(server, sessionMiddleware);
 mqttClient.setWs(wsManager);
 
-// ── Auto-reconnect MQTT if a race is already active ──────────────────────────
-const activeRace = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
-if (activeRace) {
-  console.log(`[server] Resuming MQTT for active race: ${activeRace.name}`);
-  mqttClient.connect({
-    host: activeRace.mqtt_host,
-    portWs: activeRace.mqtt_port_ws,
-    user: activeRace.mqtt_user,
-    pass: activeRace.mqtt_pass,
-    region: activeRace.mqtt_region,
-    channel: activeRace.mqtt_channel,
-    format: activeRace.mqtt_format,
-    psk: activeRace.mqtt_psk,
-  });
-}
+// ── Auto-connect MQTT on startup if configured ────────────────────────────────
+const connected = mqttClient.connectFromSettings(db);
+if (connected) console.log('[server] MQTT connecting from global settings');
+else console.log('[server] No MQTT settings configured yet');
 
 server.listen(PORT, () => {
   console.log(`[server] RaceTracker listening on port ${PORT}`);

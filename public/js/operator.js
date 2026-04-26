@@ -144,7 +144,7 @@ function onMapClick(e) {
 function renderRoute() {
   if (routeLayer) { leafletMap.removeLayer(routeLayer); routeLayer = null; }
   if (!trackPoints || trackPoints.length < 2) return;
-  routeLayer = L.polyline(trackPoints, { color: '#58a6ff', weight: 3, opacity: 0.7 }).addTo(leafletMap);
+  routeLayer = L.polyline(trackPoints, { color: '#f5a623', weight: 5, opacity: 0.85 }).addTo(leafletMap);
   if (!selectedPId) leafletMap.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
 }
 

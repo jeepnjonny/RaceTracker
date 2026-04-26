@@ -8,7 +8,8 @@ const geo = require('./geo');
 
 let protoRoot = null;
 let mqttClient = null;
-let wsRef = null; // set by websocket.js
+let wsRef = null;
+let currentConfig = null;
 
 const PORTNUM = { TEXT: 1, POSITION: 3, NODEINFO: 4, TELEMETRY: 67 };
 
@@ -338,8 +339,26 @@ async function handleProtoMessage(payload, psk) {
   }
 }
 
+function connectFromSettings(db) {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'mqtt_%'").all();
+  const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  if (!s.mqtt_host) return false;
+  connect({
+    host: s.mqtt_host,
+    portWs: parseInt(s.mqtt_port_ws) || 9001,
+    user: s.mqtt_user || '',
+    pass: s.mqtt_pass || '',
+    region: s.mqtt_region || 'US',
+    channel: s.mqtt_channel || 'LongFast',
+    format: s.mqtt_format || 'json',
+    psk: s.mqtt_psk || 'AQ==',
+  });
+  return true;
+}
+
 function connect(config) {
   disconnect();
+  currentConfig = config;
   const url = `ws://${config.host}:${config.portWs}`;
   const opts = {
     username: config.user,
@@ -394,10 +413,9 @@ function getStatus() {
 }
 
 // Publish an outbound text message to a specific node
-function publishMessage(config, toNodeId, text) {
-  if (!mqttClient || !mqttClient.connected) return false;
-  // Send as a direct message topic
-  const topic = `msh/${config.region}/2/json/${config.channel}/!server`;
+function publishMessage(toNodeId, text) {
+  if (!mqttClient || !mqttClient.connected || !currentConfig) return false;
+  const topic = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/!server`;
   const payload = JSON.stringify({
     from: 0,
     to: toNodeId,
@@ -413,4 +431,4 @@ function invalidateRouteCache(raceId) {
   routeCache.delete(raceId);
 }
 
-module.exports = { connect, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache };
