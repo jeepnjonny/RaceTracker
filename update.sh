@@ -15,6 +15,8 @@ sudo rsync -av --delete \
   --exclude='data' \
   "$(dirname "$(realpath "$0")")/" "${INSTALL_DIR}/"
 
+sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
+
 echo "Installing/updating npm dependencies..."
 cd "${INSTALL_DIR}"
 sudo -u "${SERVICE_USER}" npm install --omit=dev

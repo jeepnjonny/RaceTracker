@@ -37,7 +37,7 @@ sudo rsync -av --delete \
 
 sudo mkdir -p "${INSTALL_DIR}/data/uploads/tracks" \
              "${INSTALL_DIR}/data/uploads/participants"
-sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/data"
+sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
 
 # ── npm dependencies ───────────────────────────────────────────────────────
 echo "Installing npm dependencies..."
