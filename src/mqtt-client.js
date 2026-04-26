@@ -1,0 +1,416 @@
+'use strict';
+const mqtt = require('mqtt');
+const crypto = require('crypto');
+const protobuf = require('protobufjs');
+const path = require('path');
+const db = require('./db');
+const geo = require('./geo');
+
+let protoRoot = null;
+let mqttClient = null;
+let wsRef = null; // set by websocket.js
+
+const PORTNUM = { TEXT: 1, POSITION: 3, NODEINFO: 4, TELEMETRY: 67 };
+
+async function loadProto() {
+  if (protoRoot) return protoRoot;
+  protoRoot = await protobuf.load(path.join(__dirname, 'proto', 'meshtastic.proto'));
+  return protoRoot;
+}
+
+function nodeIdHex(num) {
+  return '!' + (num >>> 0).toString(16).padStart(8, '0');
+}
+
+// Derive AES-128 key from PSK base64
+function derivePskKey(pskB64) {
+  const raw = Buffer.from(pskB64, 'base64');
+  const key = Buffer.alloc(16, 0);
+  raw.copy(key, 0, 0, Math.min(raw.length, 16));
+  return key;
+}
+
+// Decrypt Meshtastic encrypted payload
+function decryptPayload(encryptedBytes, packetId, fromNode, pskB64) {
+  try {
+    const key = derivePskKey(pskB64);
+    const nonce = Buffer.alloc(16, 0);
+    nonce.writeUInt32LE(packetId >>> 0, 0);
+    nonce.writeUInt32LE(fromNode >>> 0, 8);
+    const decipher = crypto.createDecipheriv('aes-128-ctr', key, nonce);
+    return Buffer.concat([decipher.update(encryptedBytes), decipher.final()]);
+  } catch (e) {
+    return null;
+  }
+}
+
+function setWs(ws) { wsRef = ws; }
+
+function broadcast(type, data) {
+  if (wsRef) wsRef.broadcast({ type, data });
+}
+
+// Persist position, update registry, check geofences & alerts
+function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi, battery, timestamp }) {
+  if (!nodeId || isNaN(lat) || isNaN(lon)) return;
+
+  // Update registry
+  db.prepare(`
+    INSERT INTO tracker_registry (node_id, last_seen, last_lat, last_lon, last_altitude, last_speed, snr, rssi)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(node_id) DO UPDATE SET
+      last_seen=excluded.last_seen, last_lat=excluded.last_lat,
+      last_lon=excluded.last_lon, last_altitude=excluded.last_altitude,
+      last_speed=excluded.last_speed, snr=excluded.snr, rssi=excluded.rssi
+  `).run(nodeId, timestamp, lat, lon, altitude ?? null, speed ?? null, snr ?? null, rssi ?? null);
+
+  // Store position history
+  const activeRace = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
+  if (activeRace) {
+    db.prepare(`
+      INSERT INTO tracker_positions (race_id, node_id, lat, lon, altitude, speed, heading, battery, snr, rssi, timestamp)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    `).run(activeRace.id, nodeId, lat, lon, altitude ?? null, speed ?? null, heading ?? null,
+           battery ?? null, snr ?? null, rssi ?? null, timestamp);
+
+    // Keep only last 500 positions per node per race
+    db.prepare(`
+      DELETE FROM tracker_positions WHERE id IN (
+        SELECT id FROM tracker_positions WHERE race_id=? AND node_id=?
+        ORDER BY timestamp DESC LIMIT -1 OFFSET 500
+      )
+    `).run(activeRace.id, nodeId);
+
+    // Find matching participant
+    const participant = findParticipant(nodeId, activeRace.id);
+    if (participant) {
+      checkGeofences(participant, activeRace, lat, lon, timestamp);
+      checkOffCourse(participant, activeRace, lat, lon, timestamp);
+    }
+  }
+
+  broadcast('position', { nodeId, lat, lon, altitude, speed, heading, battery, snr, rssi, timestamp });
+}
+
+function handleTelemetry({ nodeId, battery, voltage, timestamp }) {
+  if (!nodeId) return;
+  db.prepare(`
+    INSERT INTO tracker_registry (node_id, battery_level, voltage, last_seen)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(node_id) DO UPDATE SET
+      battery_level=excluded.battery_level, voltage=excluded.voltage, last_seen=excluded.last_seen
+  `).run(nodeId, battery ?? null, voltage ?? null, timestamp);
+
+  broadcast('tracker_info', { nodeId, battery, voltage, timestamp });
+}
+
+function handleNodeInfo({ nodeId, longName, shortName, hwModel, timestamp }) {
+  if (!nodeId) return;
+  db.prepare(`
+    INSERT INTO tracker_registry (node_id, long_name, short_name, hw_model, last_seen)
+    VALUES (?,?,?,?,?)
+    ON CONFLICT(node_id) DO UPDATE SET
+      long_name=excluded.long_name, short_name=excluded.short_name,
+      hw_model=excluded.hw_model, last_seen=excluded.last_seen
+  `).run(nodeId, longName ?? null, shortName ?? null, hwModel ?? null, timestamp);
+
+  broadcast('tracker_info', { nodeId, longName, shortName, timestamp });
+}
+
+function handleTextMessage({ fromNodeId, toNodeId, text, timestamp }) {
+  const activeRace = db.prepare("SELECT id FROM races WHERE status='active' LIMIT 1").get();
+  if (!activeRace) return;
+
+  const reg = db.prepare('SELECT long_name, short_name FROM tracker_registry WHERE node_id=?').get(fromNodeId);
+  const fromName = reg ? (reg.long_name || reg.short_name || fromNodeId) : fromNodeId;
+
+  // Find matching personnel name for sender
+  const personnel = db.prepare(
+    'SELECT name FROM personnel WHERE race_id=? AND tracker_id=? LIMIT 1'
+  ).get(activeRace.id, fromNodeId);
+
+  db.prepare(`
+    INSERT INTO messages (race_id, direction, from_node_id, to_node_id, from_name, to_name, text, timestamp)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(activeRace.id, 'in', fromNodeId, toNodeId,
+         personnel ? personnel.name : fromName, null, text, timestamp);
+
+  broadcast('message', {
+    direction: 'in',
+    from_node_id: fromNodeId,
+    from_name: personnel ? personnel.name : fromName,
+    text,
+    timestamp,
+  });
+}
+
+// Match nodeId (could be !hex, longname, or shortname) to a participant
+function findParticipant(nodeId, raceId) {
+  const reg = db.prepare('SELECT long_name, short_name FROM tracker_registry WHERE node_id=?').get(nodeId);
+  const ids = [nodeId, reg?.long_name, reg?.short_name].filter(Boolean);
+  for (const id of ids) {
+    const p = db.prepare(
+      'SELECT * FROM participants WHERE race_id=? AND (tracker_id=? OR tracker_id=?) LIMIT 1'
+    ).get(raceId, id, id.toLowerCase());
+    if (p) return p;
+  }
+  return null;
+}
+
+// Geofence check: auto-log station timing events
+const recentGeofenceEvents = new Map(); // key: `${participantId}_${stationId}_arrive/depart`
+
+function checkGeofences(participant, race, lat, lon, timestamp) {
+  if (!race.alerts_enabled) return;
+  const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(race.id);
+
+  for (const station of stations) {
+    const inside = geo.inGeofence(lat, lon, station.lat, station.lon, race.geofence_radius);
+    const arriveKey = `${participant.id}_${station.id}_arrive`;
+    const departKey = `${participant.id}_${station.id}_depart`;
+
+    if (inside && !recentGeofenceEvents.has(arriveKey)) {
+      recentGeofenceEvents.set(arriveKey, timestamp);
+      setTimeout(() => recentGeofenceEvents.delete(arriveKey), 30000);
+
+      const eventType = station.type === 'start' ? 'start' :
+                        station.type === 'finish' ? 'finish' : 'aid_arrive';
+
+      db.prepare(`
+        INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp)
+        VALUES (?,?,?,?,?)
+      `).run(race.id, participant.id, eventType, station.id, timestamp);
+
+      if (station.type === 'start' && participant.status === 'dns') {
+        db.prepare("UPDATE participants SET status='active', start_time=? WHERE id=?")
+          .run(timestamp, participant.id);
+      }
+      if (station.type === 'finish' && participant.status === 'active') {
+        db.prepare("UPDATE participants SET status='finished', finish_time=? WHERE id=?")
+          .run(timestamp, participant.id);
+      }
+
+      broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp });
+    } else if (!inside && recentGeofenceEvents.has(arriveKey) && !recentGeofenceEvents.has(departKey)) {
+      recentGeofenceEvents.set(departKey, timestamp);
+      setTimeout(() => recentGeofenceEvents.delete(departKey), 30000);
+
+      if (station.type !== 'start' && station.type !== 'finish') {
+        db.prepare(`
+          INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp)
+          VALUES (?,?,?,?,?)
+        `).run(race.id, participant.id, 'aid_depart', station.id, timestamp);
+        broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'aid_depart', stationId: station.id, timestamp });
+      }
+    }
+  }
+}
+
+// Track route data in memory for alert calculations
+const routeCache = new Map(); // raceId -> { points, meta }
+
+function getRouteData(race) {
+  if (routeCache.has(race.id)) return routeCache.get(race.id);
+  if (!race.track_file) return null;
+  try {
+    const fs = require('fs');
+    const raw = fs.readFileSync(race.track_file, 'utf8');
+    const { parseTrack } = require('./routes/tracks');
+    const parsed = parseTrack(raw, race.track_file, race.track_path_index);
+    if (!parsed) return null;
+    const meta = geo.buildTrackMeta(parsed);
+    const data = { points: parsed, meta };
+    routeCache.set(race.id, data);
+    return data;
+  } catch { return null; }
+}
+
+const lastOffCourseAlert = new Map();
+
+function checkOffCourse(participant, race, lat, lon, timestamp) {
+  if (!race.alerts_enabled || !race.off_course_distance) return;
+  const route = getRouteData(race);
+  if (!route) return;
+  const { distanceFromRoute } = geo.findPositionOnRoute(lat, lon, route.points, route.meta);
+  const alertKey = `${participant.id}_offcourse`;
+  if (distanceFromRoute > race.off_course_distance) {
+    const last = lastOffCourseAlert.get(alertKey) || 0;
+    if (timestamp - last > 120) { // suppress repeat alerts for 2 min
+      lastOffCourseAlert.set(alertKey, timestamp);
+      broadcast('alert', {
+        type: 'off_course',
+        participantId: participant.id,
+        bib: participant.bib,
+        name: participant.name,
+        distanceFromRoute: Math.round(distanceFromRoute),
+        timestamp,
+      });
+    }
+  } else {
+    lastOffCourseAlert.delete(alertKey);
+  }
+}
+
+// Process a decoded JSON-style message object (from MQTT JSON format)
+function processJsonMessage(msg) {
+  const fromHex = typeof msg.from === 'number' ? nodeIdHex(msg.from) : (msg.sender || msg.from || '');
+  const ts = msg.timestamp || Math.floor(Date.now() / 1000);
+
+  if (msg.type === 'position' && msg.payload) {
+    const p = msg.payload;
+    handlePosition({
+      nodeId: fromHex,
+      lat: (p.latitude_i ?? p.latitude ?? 0) / (p.latitude_i !== undefined ? 1e7 : 1),
+      lon: (p.longitude_i ?? p.longitude ?? 0) / (p.longitude_i !== undefined ? 1e7 : 1),
+      altitude: p.altitude,
+      speed: p.ground_speed,
+      heading: p.ground_track,
+      snr: msg.snr,
+      rssi: msg.rssi,
+      timestamp: ts,
+    });
+  } else if (msg.type === 'telemetry' && msg.payload) {
+    const p = msg.payload;
+    handleTelemetry({ nodeId: fromHex, battery: p.battery_level, voltage: p.voltage, timestamp: ts });
+  } else if (msg.type === 'nodeinfo' && msg.payload) {
+    const p = msg.payload;
+    handleNodeInfo({ nodeId: fromHex, longName: p.long_name, shortName: p.short_name, hwModel: p.hardware, timestamp: ts });
+  } else if (msg.type === 'text') {
+    const toHex = typeof msg.to === 'number' ? nodeIdHex(msg.to) : (msg.to || '');
+    handleTextMessage({ fromNodeId: fromHex, toNodeId: toHex, text: msg.payload, timestamp: ts });
+  }
+}
+
+// Process decoded protobuf Data object
+async function processProtoData(data, fromNode, snr, rssi) {
+  const root = await loadProto();
+  const ts = Math.floor(Date.now() / 1000);
+  const fromHex = nodeIdHex(fromNode);
+
+  if (data.portnum === PORTNUM.POSITION) {
+    const Position = root.lookupType('meshtastic.Position');
+    const pos = Position.decode(data.payload);
+    handlePosition({
+      nodeId: fromHex,
+      lat: pos.latitudeI / 1e7,
+      lon: pos.longitudeI / 1e7,
+      altitude: pos.altitude,
+      speed: pos.groundSpeed,
+      heading: pos.groundTrack,
+      snr, rssi, timestamp: pos.time || ts,
+    });
+  } else if (data.portnum === PORTNUM.TELEMETRY) {
+    const Telemetry = root.lookupType('meshtastic.Telemetry');
+    const tel = Telemetry.decode(data.payload);
+    if (tel.deviceMetrics) {
+      handleTelemetry({ nodeId: fromHex, battery: tel.deviceMetrics.batteryLevel, voltage: tel.deviceMetrics.voltage, timestamp: ts });
+    }
+  } else if (data.portnum === PORTNUM.NODEINFO) {
+    const User = root.lookupType('meshtastic.User');
+    const user = User.decode(data.payload);
+    handleNodeInfo({ nodeId: fromHex, longName: user.longName, shortName: user.shortName, hwModel: user.hwModel, timestamp: ts });
+  } else if (data.portnum === PORTNUM.TEXT) {
+    handleTextMessage({ fromNodeId: fromHex, toNodeId: '', text: data.payload.toString('utf8'), timestamp: ts });
+  }
+}
+
+async function handleProtoMessage(payload, psk) {
+  try {
+    const root = await loadProto();
+    const ServiceEnvelope = root.lookupType('meshtastic.ServiceEnvelope');
+    const Data = root.lookupType('meshtastic.Data');
+    const envelope = ServiceEnvelope.decode(payload);
+    const packet = envelope.packet;
+    if (!packet) return;
+
+    let data;
+    if (packet.decoded) {
+      data = packet.decoded;
+    } else if (packet.encrypted) {
+      const decrypted = decryptPayload(Buffer.from(packet.encrypted), packet.id, packet.from, psk);
+      if (!decrypted) return;
+      try { data = Data.decode(decrypted); } catch { return; }
+    } else return;
+
+    await processProtoData(data, packet.from, packet.rxSnr, packet.rxRssi);
+  } catch (e) {
+    // silently ignore malformed packets
+  }
+}
+
+function connect(config) {
+  disconnect();
+  const url = `ws://${config.host}:${config.portWs}`;
+  const opts = {
+    username: config.user,
+    password: config.pass,
+    reconnectPeriod: 5000,
+  };
+  mqttClient = mqtt.connect(url, opts);
+
+  mqttClient.on('connect', () => {
+    console.log(`[mqtt] Connected to ${url}`);
+    const topic = `msh/${config.region}/2/${config.format === 'proto' ? 'e' : 'json'}/${config.channel}/#`;
+    mqttClient.subscribe(topic, err => {
+      if (err) console.error('[mqtt] Subscribe error:', err.message);
+      else console.log(`[mqtt] Subscribed to ${topic}`);
+    });
+    broadcast('mqtt_status', { connected: true, host: config.host, topic });
+  });
+
+  mqttClient.on('message', async (topic, payload) => {
+    try {
+      if (config.format === 'proto') {
+        await handleProtoMessage(payload, config.psk);
+      } else {
+        const msg = JSON.parse(payload.toString());
+        processJsonMessage(msg);
+      }
+      broadcast('mqtt_raw', { topic, ts: Date.now() });
+    } catch (e) {
+      // ignore parse errors
+    }
+  });
+
+  mqttClient.on('error', err => {
+    console.error('[mqtt] Error:', err.message);
+    broadcast('mqtt_status', { connected: false, error: err.message });
+  });
+
+  mqttClient.on('close', () => {
+    broadcast('mqtt_status', { connected: false });
+  });
+}
+
+function disconnect() {
+  if (mqttClient) {
+    mqttClient.end(true);
+    mqttClient = null;
+  }
+}
+
+function getStatus() {
+  return { connected: !!(mqttClient && mqttClient.connected) };
+}
+
+// Publish an outbound text message to a specific node
+function publishMessage(config, toNodeId, text) {
+  if (!mqttClient || !mqttClient.connected) return false;
+  // Send as a direct message topic
+  const topic = `msh/${config.region}/2/json/${config.channel}/!server`;
+  const payload = JSON.stringify({
+    from: 0,
+    to: toNodeId,
+    type: 'text',
+    payload: text,
+    timestamp: Math.floor(Date.now() / 1000),
+  });
+  mqttClient.publish(topic, payload);
+  return true;
+}
+
+function invalidateRouteCache(raceId) {
+  routeCache.delete(raceId);
+}
+
+module.exports = { connect, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache };

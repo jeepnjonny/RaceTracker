@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RaceTracker — Admin</title>
+<link rel="stylesheet" href="/css/theme.css">
+<style>
+  body { overflow: auto; flex-direction: column; height: auto; min-height: 100vh; }
+  #main { flex-direction: column; overflow: visible; flex: none; }
+  .admin-wrap { max-width: 960px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .admin-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .admin-tab {
+    padding: 8px 16px; background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--text2); font-size: 11px; letter-spacing: 1px; border-radius: 0;
+    cursor: pointer; transition: all .15s;
+  }
+  .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .admin-tab:hover:not(.active) { color: var(--text); background: var(--surface2); }
+  .admin-section { display: none; }
+  .admin-section.active { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .card h3 { font-size: 11px; letter-spacing: 2px; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
+  .race-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; cursor: pointer; }
+  .race-card:hover { border-color: var(--accent); }
+  .race-card.active-race { border-color: var(--accent2); }
+  .infra-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+    border-bottom: 1px solid var(--border); font-size: 11px; }
+  .infra-node { color: var(--accent4); font-weight: bold; min-width: 100px; }
+  .icon-preview { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <h1>&#9654; RaceTracker</h1>
+  <div class="pill pill-idle" id="active-race-pill">NO ACTIVE RACE</div>
+  <div class="pill pill-idle" id="mqtt-pill">MQTT</div>
+  <div id="topbar-right">
+    <button onclick="window.location.href='/operator.html'">OPERATOR VIEW</button>
+    <button onclick="RT.logout()">LOGOUT</button>
+  </div>
+</div>
+<div id="main">
+  <div class="admin-wrap">
+    <div class="admin-tabs" id="admin-tabs"></div>
+    <div id="admin-content"></div>
+  </div>
+</div>
+
+<!-- Race Edit Modal -->
+<div class="modal-bg hidden" id="race-modal">
+  <div class="modal modal-wide">
+    <h2 id="race-modal-title">NEW RACE</h2>
+    <div class="form-row">
+      <div class="form-group"><label>RACE NAME</label><input id="rm-name"></div>
+      <div class="form-group"><label>DATE</label><input type="date" id="rm-date"></div>
+    </div>
+    <div class="section-header">MQTT / DATA SOURCE</div>
+    <div class="form-row">
+      <div class="form-group"><label>BROKER HOST</label><input id="rm-mqtt-host" value="apps.k7swi.org"></div>
+      <div class="form-group"><label>WS PORT</label><input id="rm-mqtt-port-ws" value="9001" type="number"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>USERNAME</label><input id="rm-mqtt-user" value="racetracker"></div>
+      <div class="form-group"><label>PASSWORD</label><input id="rm-mqtt-pass" type="password" value="racetracker"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>REGION</label><input id="rm-mqtt-region" value="US"></div>
+      <div class="form-group"><label>CHANNEL NAME</label><input id="rm-mqtt-channel" value="RaceTracker"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>FORMAT</label>
+        <select id="rm-mqtt-format">
+          <option value="json">JSON (unencrypted)</option>
+          <option value="proto">Encrypted Protobuf</option>
+        </select>
+      </div>
+      <div class="form-group"><label>PSK (base64)</label><input id="rm-mqtt-psk" value="AQ=="></div>
+    </div>
+    <div class="section-header">RACE SETTINGS</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>TIME FORMAT</label>
+        <select id="rm-time-format"><option value="12h">12-Hour</option><option value="24h">24-Hour</option></select>
+      </div>
+      <div class="form-group"><label>MISSING TIMER (sec)</label><input id="rm-missing-timer" value="3600" type="number"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>GEOFENCE RADIUS (m)</label><input id="rm-geofence" value="15" type="number"></div>
+      <div class="form-group"><label>OFF-COURSE DISTANCE (m)</label><input id="rm-off-course" value="100" type="number"></div>
+      <div class="form-group"><label>STOPPED ALERT (sec)</label><input id="rm-stopped" value="600" type="number"></div>
+    </div>
+    <div class="section-header">FEATURES</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div class="checkbox-row"><input type="checkbox" id="rm-alerts" checked><label for="rm-alerts">Alerts enabled</label></div>
+      <div class="checkbox-row"><input type="checkbox" id="rm-messaging"><label for="rm-messaging">Operator messaging</label></div>
+      <div class="checkbox-row"><input type="checkbox" id="rm-viewer-map" checked><label for="rm-viewer-map">Viewer map</label></div>
+      <div class="checkbox-row"><input type="checkbox" id="rm-leaderboard" checked><label for="rm-leaderboard">Viewer leaderboard</label></div>
+      <div class="checkbox-row"><input type="checkbox" id="rm-weather"><label for="rm-weather">Weather overlay</label></div>
+    </div>
+    <div class="section-header">OPENWEATHER (optional)</div>
+    <div class="form-row">
+      <div class="form-group"><label>API KEY</label><input id="rm-weather-key" placeholder="paste key here"></div>
+      <div class="form-group"><label>LAT</label><input id="rm-weather-lat" type="number" step="any"></div>
+      <div class="form-group"><label>LON</label><input id="rm-weather-lon" type="number" step="any"></div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal('race-modal')">CANCEL</button>
+      <button class="primary" onclick="saveRace()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- User Modal -->
+<div class="modal-bg hidden" id="user-modal">
+  <div class="modal">
+    <h2 id="user-modal-title">NEW USER</h2>
+    <div class="form-group"><label>USERNAME</label><input id="um-username"></div>
+    <div class="form-group"><label>PASSWORD <span class="text-dim">(leave blank to keep current)</span></label><input type="password" id="um-password"></div>
+    <div class="form-group">
+      <label>ROLE</label>
+      <select id="um-role"><option value="operator">Operator</option><option value="admin">Admin</option></select>
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal('user-modal')">CANCEL</button>
+      <button class="primary" onclick="saveUser()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Heat Modal -->
+<div class="modal-bg hidden" id="heat-modal">
+  <div class="modal">
+    <h2 id="heat-modal-title">NEW HEAT</h2>
+    <div class="form-group"><label>HEAT NAME</label><input id="hm-name" placeholder="e.g. Wave 1, Elite"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>COLOR</label>
+        <input type="color" id="hm-color" value="#58a6ff" style="height:34px;padding:2px">
+      </div>
+      <div class="form-group">
+        <label>ICON SHAPE</label>
+        <select id="hm-shape">
+          <option value="circle">Circle</option><option value="triangle">Triangle</option>
+          <option value="square">Square</option><option value="diamond">Diamond</option>
+          <option value="star">Star</option><option value="pentagon">Pentagon</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>PREVIEW</label><div id="hm-preview" style="height:30px;display:flex;align-items:center;gap:6px"></div></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('heat-modal')">CANCEL</button>
+      <button class="primary" onclick="saveHeat()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>

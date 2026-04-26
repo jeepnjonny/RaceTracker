@@ -1,0 +1,49 @@
+'use strict';
+const express = require('express');
+const bcrypt = require('bcrypt');
+const db = require('../db');
+const { requireRole } = require('../auth');
+const router = express.Router();
+
+router.get('/', requireRole('admin'), (req, res) => {
+  const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+  res.json({ ok: true, data: users });
+});
+
+router.post('/', requireRole('admin'), async (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password || !['admin', 'operator'].includes(role))
+    return res.status(400).json({ ok: false, error: 'username, password, and role (admin|operator) required' });
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?,?,?)').run(username, hash, role);
+    res.json({ ok: true, data: { id: result.lastInsertRowid, username, role } });
+  } catch (e) {
+    res.status(409).json({ ok: false, error: 'Username already exists' });
+  }
+});
+
+router.put('/:id', requireRole('admin'), async (req, res) => {
+  const { username, password, role } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+
+  const newUsername = username || user.username;
+  const newRole = role || user.role;
+  const newHash = password ? await bcrypt.hash(password, 10) : user.password_hash;
+
+  db.prepare('UPDATE users SET username=?, password_hash=?, role=? WHERE id=?')
+    .run(newUsername, newHash, newRole, req.params.id);
+  res.json({ ok: true, data: { id: user.id, username: newUsername, role: newRole } });
+});
+
+router.delete('/:id', requireRole('admin'), (req, res) => {
+  // Prevent deleting own account
+  if (parseInt(req.params.id) === req.session.user.id)
+    return res.status(400).json({ ok: false, error: 'Cannot delete your own account' });
+  const result = db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ ok: false, error: 'User not found' });
+  res.json({ ok: true });
+});
+
+module.exports = router;

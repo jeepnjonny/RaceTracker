@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>RaceTracker — Live View</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="/css/theme.css">
+<style>
+  body { overflow: hidden; }
+  #viewer-topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 8px 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  #viewer-topbar h1 { font-size: 13px; font-weight: bold; letter-spacing: 2px; color: var(--accent); }
+  #viewer-main { display: flex; flex: 1; overflow: hidden; }
+  #viewer-map-wrap { flex: 1; position: relative; }
+  #viewer-map { width: 100%; height: 100%; }
+  #viewer-lb-wrap { width: 320px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  #viewer-sort-bar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .v-sort-btn { font-size: 10px; padding: 2px 8px; }
+  .v-sort-btn.active { border-color: var(--accent); color: var(--accent); }
+  .v-lb-head { font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase;
+    display: grid; grid-template-columns: 24px 28px 1fr 52px 50px;
+    gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; }
+  #viewer-lb-body { flex: 1; overflow-y: auto; }
+  .v-lb-row { display: grid; grid-template-columns: 24px 28px 1fr 52px 50px;
+    gap: 4px; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .v-lb-row.alert-row { animation: blink 1.2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+  /* Mobile: stack layout */
+  #view-toggle { display: none; }
+  @media (max-width: 700px) {
+    #viewer-lb-wrap { display: none; width: 100%; border-left: none; }
+    #view-toggle { display: flex; }
+    #viewer-map-wrap { display: block; }
+    body.lb-mode #viewer-map-wrap { display: none; }
+    body.lb-mode #viewer-lb-wrap { display: flex; width: 100%; }
+  }
+  .tracker-icon-alert { animation: blink 1s infinite; }
+  .leaflet-div-icon { background: none; border: none; }
+</style>
+</head>
+<body>
+<div id="viewer-topbar">
+  <h1>&#9654; RaceTracker</h1>
+  <div class="pill pill-idle" id="vw-race-pill">LOADING...</div>
+  <div id="vw-clock" style="font-size:16px;font-weight:bold;color:var(--accent2);letter-spacing:2px;margin-left:auto">--:--:--</div>
+  <div id="view-toggle" style="gap:6px">
+    <button onclick="VW.toggleView()" id="vw-toggle-btn">LEADERBOARD</button>
+  </div>
+</div>
+<div id="viewer-main">
+  <div id="viewer-map-wrap">
+    <div id="viewer-map"></div>
+  </div>
+  <div id="viewer-lb-wrap">
+    <div id="viewer-sort-bar">
+      <span style="font-size:10px;color:var(--text3);align-self:center">SORT:</span>
+      <button class="v-sort-btn active" data-sort="position" onclick="VW.setSort('position')">POSITION</button>
+      <button class="v-sort-btn" data-sort="bib" onclick="VW.setSort('bib')">BIB</button>
+      <button class="v-sort-btn" data-sort="pace" onclick="VW.setSort('pace')">PACE</button>
+      <button class="v-sort-btn" data-sort="name" onclick="VW.setSort('name')">NAME</button>
+      <button class="v-sort-btn" data-sort="heat" onclick="VW.setSort('heat')">HEAT</button>
+    </div>
+    <div class="v-lb-head">
+      <span>#</span><span>BIB</span><span>NAME</span><span>PROGRESS</span><span>PACE</span>
+    </div>
+    <div id="viewer-lb-body"></div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/viewer.js"></script>
+</body>
+</html>
