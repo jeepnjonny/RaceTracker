@@ -752,30 +752,37 @@ async function importStationsCsv() {
 }
 
 let editingStationId = null;
+
 function openStationModal(id) {
   editingStationId = id || null;
   const s = id ? stations.find(x => x.id === id) : null;
-  const name = prompt('Station name:', s?.name || '');
-  if (!name) return;
-  const lat = parseFloat(prompt('Latitude:', s?.lat || ''));
-  const lon = parseFloat(prompt('Longitude:', s?.lon || ''));
-  if (isNaN(lat) || isNaN(lon)) { RT.toast('Invalid coordinates', 'warn'); return; }
-  const type = prompt('Type (start/finish/aid/checkpoint):', s?.type || 'aid');
-  const cutoff = prompt('Cutoff time HH:MM (leave blank for none):', s?.cutoff_time || '') || null;
-  id ? updateStation(id, { name, lat, lon, type, cutoff_time: cutoff })
-     : createStation({ name, lat, lon, type, cutoff_time: cutoff });
+  document.getElementById('station-modal-title').textContent = id ? 'EDIT STATION' : 'NEW STATION';
+  document.getElementById('sm-name').value   = s?.name || '';
+  document.getElementById('sm-type').value   = s?.type || 'aid';
+  document.getElementById('sm-lat').value    = s?.lat ?? '';
+  document.getElementById('sm-lon').value    = s?.lon ?? '';
+  document.getElementById('sm-cutoff').value = s?.cutoff_time || '';
+  document.getElementById('station-modal').classList.remove('hidden');
+  document.getElementById('sm-name').focus();
 }
 
-async function createStation(body) {
-  const res = await RT.post(`/api/races/${selectedRaceId}/stations`, body);
-  if (res.ok) { await loadStations(); RT.toast('Station added', 'ok'); }
-  else RT.toast(res.error, 'warn');
-}
-
-async function updateStation(id, body) {
-  const res = await RT.put(`/api/races/${selectedRaceId}/stations/${id}`, body);
-  if (res.ok) { await loadStations(); RT.toast('Station updated', 'ok'); }
-  else RT.toast(res.error, 'warn');
+async function saveStation() {
+  const name   = document.getElementById('sm-name').value.trim();
+  const type   = document.getElementById('sm-type').value;
+  const lat    = parseFloat(document.getElementById('sm-lat').value);
+  const lon    = parseFloat(document.getElementById('sm-lon').value);
+  const cutoff = document.getElementById('sm-cutoff').value.trim() || null;
+  if (!name) { RT.toast('Name required', 'warn'); return; }
+  if (isNaN(lat) || isNaN(lon)) { RT.toast('Valid lat/lon required', 'warn'); return; }
+  const body = { name, type, lat, lon, cutoff_time: cutoff };
+  const res = editingStationId
+    ? await RT.put(`/api/races/${selectedRaceId}/stations/${editingStationId}`, body)
+    : await RT.post(`/api/races/${selectedRaceId}/stations`, body);
+  if (res.ok) {
+    closeModal('station-modal');
+    await loadStations();
+    RT.toast(editingStationId ? 'Station updated' : 'Station added', 'ok');
+  } else RT.toast(res.error, 'warn');
 }
 
 async function deleteStation(id) {
@@ -796,7 +803,7 @@ function renderPersonnelTab() {
   <div class="card">
     <h3>AID STATION PERSONNEL</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="primary" onclick="addPersonnel()">+ ADD PERSON</button>
+      <button class="primary" onclick="openPersonnelModal()">+ ADD PERSON</button>
       <button onclick="showPersonnelCsvPanel()">CSV IMPORT</button>
     </div>
     <div id="pers-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">
@@ -862,36 +869,48 @@ async function loadPersonnel() {
       <td>${p.tracker_id || '<span class="text-dim">—</span>'}</td>
       <td>${p.phone || '<span class="text-dim">—</span>'}</td>
       <td style="text-align:right">
-        <button style="font-size:10px;padding:2px 8px" onclick="editPersonnel(${p.id})">EDIT</button>
+        <button style="font-size:10px;padding:2px 8px" onclick="openPersonnelModal(${p.id})">EDIT</button>
         <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deletePersonnel(${p.id})">DEL</button>
       </td>
     </tr>`).join('')}
   </tbody></table>`;
 }
 
-async function addPersonnel() {
-  const name = prompt('Name:'); if (!name) return;
-  const stationName = prompt(`Station (${stations.map(s=>s.name).join(', ')}) or blank:`);
-  const station = stations.find(s => s.name.toLowerCase() === stationName?.toLowerCase());
-  const tracker_id = prompt('Tracker ID (node ID, longname, or shortname — leave blank if none):') || null;
-  const phone = prompt('Phone (optional):') || null;
-  const res = await RT.post(`/api/races/${selectedRaceId}/personnel`, { name, station_id: station?.id || null, tracker_id, phone });
-  if (res.ok) { await loadPersonnel(); RT.toast('Added', 'ok'); }
+let editingPersonnelId = null;
+
+function openPersonnelModal(id) {
+  editingPersonnelId = id || null;
+  const p = id ? personnel.find(x => x.id === id) : null;
+  document.getElementById('personnel-modal-title').textContent = id ? 'EDIT PERSONNEL' : 'NEW PERSONNEL';
+  document.getElementById('pm-name').value       = p?.name || '';
+  document.getElementById('pm-tracker-id').value = p?.tracker_id || '';
+  document.getElementById('pm-phone').value      = p?.phone || '';
+  const sel = document.getElementById('pm-station-id');
+  sel.innerHTML = '<option value="">— Unassigned —</option>' +
+    stations.map(s => `<option value="${s.id}"${s.id === p?.station_id ? ' selected' : ''}>${s.name}</option>`).join('');
+  document.getElementById('personnel-modal').classList.remove('hidden');
+  document.getElementById('pm-name').focus();
 }
 
-async function editPersonnel(id) {
-  const p = personnel.find(x => x.id === id);
-  const name = prompt('Name:', p.name); if (!name) return;
-  const stationName = prompt(`Station:`, p.station_name || '');
-  const station = stations.find(s => s.name.toLowerCase() === stationName?.toLowerCase());
-  const tracker_id = prompt('Tracker ID:', p.tracker_id || '') || null;
-  const phone = prompt('Phone:', p.phone || '') || null;
-  await RT.put(`/api/races/${selectedRaceId}/personnel/${id}`, { name, station_id: station?.id || null, tracker_id, phone });
-  await loadPersonnel();
+async function savePersonnel() {
+  const name       = document.getElementById('pm-name').value.trim();
+  const station_id = document.getElementById('pm-station-id').value || null;
+  const tracker_id = document.getElementById('pm-tracker-id').value.trim() || null;
+  const phone      = document.getElementById('pm-phone').value.trim() || null;
+  if (!name) { RT.toast('Name required', 'warn'); return; }
+  const body = { name, station_id: station_id ? parseInt(station_id) : null, tracker_id, phone };
+  const res = editingPersonnelId
+    ? await RT.put(`/api/races/${selectedRaceId}/personnel/${editingPersonnelId}`, body)
+    : await RT.post(`/api/races/${selectedRaceId}/personnel`, body);
+  if (res.ok) {
+    closeModal('personnel-modal');
+    await loadPersonnel();
+    RT.toast(editingPersonnelId ? 'Personnel updated' : 'Personnel added', 'ok');
+  } else RT.toast(res.error, 'warn');
 }
 
 async function deletePersonnel(id) {
-  if (!confirm('Delete?')) return;
+  if (!confirm('Delete this person?')) return;
   await RT.del(`/api/races/${selectedRaceId}/personnel/${id}`);
   await loadPersonnel();
 }
@@ -997,7 +1016,7 @@ function renderSettingsTab() {
     <h3>MQTT / DATA SOURCE</h3>
     <div class="form-row">
       <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
-      <div class="form-group"><label>WS PORT</label><input id="s-mqtt-port-ws" type="number" value="9001"></div>
+      <div class="form-group"><label>PORT</label><input id="s-mqtt-port-ws" type="number" value="9001"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>USERNAME</label><input id="s-mqtt-user" placeholder="racetracker"></div>
@@ -1087,6 +1106,13 @@ function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.modal-bg:not(.hidden)').forEach(m => m.classList.add('hidden'));
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+    const modal = e.target.closest('.modal-bg');
+    if (!modal) return;
+    if (modal.id === 'personnel-modal') savePersonnel();
+    if (modal.id === 'station-modal')   saveStation();
+    if (modal.id === 'user-modal')      saveUser();
+  }
 });
 
 // Bind heat preview updates

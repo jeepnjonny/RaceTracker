@@ -140,6 +140,52 @@
   </div>
 </div>
 
+<!-- Personnel Modal -->
+<div class="modal-bg hidden" id="personnel-modal">
+  <div class="modal">
+    <h2 id="personnel-modal-title">NEW PERSONNEL</h2>
+    <div class="form-group"><label>NAME</label><input id="pm-name"></div>
+    <div class="form-group">
+      <label>STATION</label>
+      <select id="pm-station-id"><option value="">— Unassigned —</option></select>
+    </div>
+    <div class="form-group"><label>TRACKER ID <span class="text-dim">(node ID, longname, or shortname)</span></label><input id="pm-tracker-id" placeholder="leave blank if none"></div>
+    <div class="form-group"><label>PHONE</label><input id="pm-phone" placeholder="optional"></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('personnel-modal')">CANCEL</button>
+      <button class="primary" onclick="savePersonnel()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Station Modal -->
+<div class="modal-bg hidden" id="station-modal">
+  <div class="modal">
+    <h2 id="station-modal-title">NEW STATION</h2>
+    <div class="form-group"><label>NAME</label><input id="sm-name"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>TYPE</label>
+        <select id="sm-type">
+          <option value="aid">Aid Station</option>
+          <option value="start">Start</option>
+          <option value="finish">Finish</option>
+          <option value="checkpoint">Checkpoint</option>
+        </select>
+      </div>
+      <div class="form-group"><label>CUTOFF TIME (HH:MM)</label><input id="sm-cutoff" placeholder="optional"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>LATITUDE</label><input id="sm-lat" type="number" step="any" placeholder="e.g. 35.1234"></div>
+      <div class="form-group"><label>LONGITUDE</label><input id="sm-lon" type="number" step="any" placeholder="e.g. -82.5678"></div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal('station-modal')">CANCEL</button>
+      <button class="primary" onclick="saveStation()">SAVE</button>
+    </div>
+  </div>
+</div>
+
 <script src="js/common.js"></script>
 <script src="js/admin.js"></script>
 </body>
