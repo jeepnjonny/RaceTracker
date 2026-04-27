@@ -159,7 +159,8 @@ async function genViewerToken(id) {
 
 function copyViewerLink(token) {
   const url = `${location.origin}${RT.BASE}view/${token}`;
-  navigator.clipboard.writeText(url).then(() => RT.toast('Viewer URL copied to clipboard', 'ok'));
+  window.open(url, '_blank');
+  navigator.clipboard.writeText(url).then(() => RT.toast('Viewer URL opened and copied to clipboard', 'ok'));
 }
 
 async function revokeViewerToken(id) {
