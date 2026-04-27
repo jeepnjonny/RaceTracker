@@ -197,6 +197,7 @@ async function openRaceModal(id) {
   document.getElementById('rm-viewer-map').checked   = !!(race?.viewer_map_enabled ?? 1);
   document.getElementById('rm-leaderboard').checked  = !!(race?.leaderboard_enabled ?? 1);
   document.getElementById('rm-weather').checked      = !!(race?.weather_enabled);
+  document.getElementById('rm-race-format').value    = race?.race_format || 'point_to_point';
   // Populate course dropdown
   const cr = await RT.get('/api/courses');
   const cSel = document.getElementById('rm-course-id');
@@ -221,6 +222,7 @@ async function saveRace() {
     leaderboard_enabled: document.getElementById('rm-leaderboard').checked ? 1 : 0,
     weather_enabled:     document.getElementById('rm-weather').checked ? 1 : 0,
     course_id:           courseVal ? parseInt(courseVal) : null,
+    race_format:         document.getElementById('rm-race-format').value,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId
@@ -530,10 +532,13 @@ function renderCourseDetail(el, course) {
     </div>` : ''}
     ${d.trackPoints?.length >= 2 ? (() => {
       const race = races.find(r => r.id === selectedRaceId);
-      const missingStart  = !stations.some(s => s.type === 'start');
-      const missingFinish = !stations.some(s => s.type === 'finish');
-      if (!missingStart && !missingFinish) return '';
-      const missing = [missingStart && 'START', missingFinish && 'FINISH'].filter(Boolean).join(' + ');
+      const isOutBack = race?.race_format === 'out_and_back';
+      const missingA = isOutBack ? !stations.some(s => s.type === 'start_finish') : !stations.some(s => s.type === 'start');
+      const missingB = isOutBack ? !stations.some(s => s.type === 'turnaround')   : !stations.some(s => s.type === 'finish');
+      if (!missingA && !missingB) return '';
+      const labelA = isOutBack ? 'START/FINISH' : 'START';
+      const labelB = isOutBack ? 'TURNAROUND'   : 'FINISH';
+      const missing = [missingA && labelA, missingB && labelB].filter(Boolean).join(' + ');
       return `<div style="background:rgba(210,153,34,.10);border:1px solid rgba(210,153,34,.35);border-radius:4px;padding:7px 10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="font-size:11px;color:#d2993a;flex:1">&#9888; No ${missing} station for <strong>${race?.name || 'selected race'}</strong></span>
         <button onclick="autoCreateStartFinish()" style="font-size:10px;padding:4px 10px;white-space:nowrap">AUTO-CREATE FROM TRACK</button>
@@ -549,8 +554,9 @@ function renderCourseDetail(el, course) {
           <label for="wpt-${i}" style="flex:1;font-size:12px;cursor:pointer">${w.name}</label>
           <span class="text-dim" style="font-size:10px">${w.lat.toFixed(4)}, ${w.lon.toFixed(4)}</span>
           <select id="wpt-type-${i}" style="font-size:10px;padding:1px 4px">
-            <option value="aid">AID</option><option value="start">START</option>
-            <option value="finish">FINISH</option><option value="checkpoint">CHECK</option>
+            <option value="aid">AID</option><option value="checkpoint">CHECK</option>
+            <option value="start">START</option><option value="finish">FINISH</option>
+            <option value="start_finish">S/F</option><option value="turnaround">TURN</option>
           </select>
         </div>`).join('')}
       </div>
@@ -578,19 +584,27 @@ function onSeedRaceChange(sel) {
 async function autoCreateStartFinish() {
   const pts = courseParseData?.trackPoints;
   if (!pts?.length) return;
-  const missingStart  = !stations.some(s => s.type === 'start');
-  const missingFinish = !stations.some(s => s.type === 'finish');
-  const toCreate = [];
-  if (missingStart)  toCreate.push({ name: 'Start',  type: 'start',  lat: pts[0][0],             lon: pts[0][1] });
-  if (missingFinish) toCreate.push({ name: 'Finish', type: 'finish', lat: pts[pts.length-1][0],  lon: pts[pts.length-1][1] });
   const race = races.find(r => r.id === selectedRaceId);
+  const isOutBack = race?.race_format === 'out_and_back';
+  const toCreate = [];
+  if (isOutBack) {
+    if (!stations.some(s => s.type === 'start_finish'))
+      toCreate.push({ name: 'Start/Finish', type: 'start_finish', lat: pts[0][0],            lon: pts[0][1] });
+    if (!stations.some(s => s.type === 'turnaround'))
+      toCreate.push({ name: 'Turnaround',   type: 'turnaround',   lat: pts[pts.length-1][0], lon: pts[pts.length-1][1] });
+  } else {
+    if (!stations.some(s => s.type === 'start'))
+      toCreate.push({ name: 'Start',  type: 'start',  lat: pts[0][0],            lon: pts[0][1] });
+    if (!stations.some(s => s.type === 'finish'))
+      toCreate.push({ name: 'Finish', type: 'finish', lat: pts[pts.length-1][0], lon: pts[pts.length-1][1] });
+  }
+  if (!toCreate.length) return;
   if (!confirm(`Auto-create ${toCreate.map(s=>s.name).join(' and ')} station(s) for "${race?.name}" at the track start/end coordinates?`)) return;
   for (const s of toCreate) {
     await RT.post(`/api/races/${selectedRaceId}/stations`, s);
   }
   RT.toast(`Created ${toCreate.map(s=>s.name).join(' + ')} station(s)`, 'ok');
   await loadStations();
-  // Re-render detail panel to update the warning
   if (selectedCourseId) await selectCourse(selectedCourseId);
 }
 
@@ -758,10 +772,18 @@ async function loadStations() {
 }
 
 function stationWarningHtml() {
+  if (!stations.length) return '';
+  const race = races.find(r => r.id === selectedRaceId);
+  const isOutBack = race?.race_format === 'out_and_back';
   const missing = [];
-  if (!stations.some(s => s.type === 'start'))  missing.push('START');
-  if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
-  if (!missing.length || !stations.length) return '';
+  if (isOutBack) {
+    if (!stations.some(s => s.type === 'start_finish')) missing.push('START/FINISH');
+    if (!stations.some(s => s.type === 'turnaround'))   missing.push('TURNAROUND');
+  } else {
+    if (!stations.some(s => s.type === 'start'))  missing.push('START');
+    if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
+  }
+  if (!missing.length) return '';
   return `<div style="background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4);border-radius:4px;padding:7px 10px;margin-bottom:8px;font-size:11px;color:#d2993a">
     &#9888; No <strong>${missing.join(' or ')}</strong> station defined — participants will not auto-transition status via geofence.
   </div>`;

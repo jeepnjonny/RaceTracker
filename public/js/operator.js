@@ -155,8 +155,10 @@ function renderStationMarkers() {
   Object.values(stationMarkers).forEach(m => leafletMap.removeLayer(m));
   stationMarkers = {};
   for (const s of stations) {
-    const color = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' : '#d2a679';
-    const letter = s.type === 'start' ? 'S' : s.type === 'finish' ? 'F' : s.name[0]?.toUpperCase() || 'A';
+    const color = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' :
+                  s.type === 'start_finish' ? '#a371f7' : s.type === 'turnaround' ? '#58a6ff' : '#d2a679';
+    const letter = s.type === 'start' ? 'S' : s.type === 'finish' ? 'F' :
+                   s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' : s.name[0]?.toUpperCase() || 'A';
     const icon = L.divIcon({
       html: `<div style="width:22px;height:22px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#000;font-family:'Courier New'">${letter}</div>`,
       className: '', iconAnchor: [11, 11],
@@ -617,9 +619,15 @@ function checkStationWarnings() {
   const bar = document.getElementById('setup-warning');
   const txt = document.getElementById('setup-warning-text');
   if (!bar || !txt || !race) { if (bar) bar.style.display = 'none'; return; }
+  const isOutBack = race.race_format === 'out_and_back';
   const missing = [];
-  if (!stations.some(s => s.type === 'start'))  missing.push('START');
-  if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
+  if (isOutBack) {
+    if (!stations.some(s => s.type === 'start_finish')) missing.push('START/FINISH');
+    if (!stations.some(s => s.type === 'turnaround'))   missing.push('TURNAROUND');
+  } else {
+    if (!stations.some(s => s.type === 'start'))  missing.push('START');
+    if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
+  }
   if (missing.length) {
     txt.textContent = `No ${missing.join(' or ')} station defined — participants will not auto-transition status via geofence.`;
     bar.style.display = 'flex';

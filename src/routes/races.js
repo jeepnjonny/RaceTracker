@@ -9,7 +9,7 @@ const router = express.Router();
 const RACE_FIELDS = [
   'name','date','status','time_format','geofence_radius','off_course_distance',
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
-  'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id',
+  'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id','race_format',
 ];
 
 router.get('/', requireAuth, (req, res) => {
@@ -96,12 +96,13 @@ router.post('/:id/clone', requireRole('admin'), (req, res) => {
   const newRace = db.prepare(`
     INSERT INTO races (name, date, status, time_format, geofence_radius, off_course_distance,
       stopped_time, missing_timer, alerts_enabled, messaging_enabled, viewer_map_enabled,
-      leaderboard_enabled, weather_enabled, cloned_from)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      leaderboard_enabled, weather_enabled, course_id, race_format, cloned_from)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(name, date, 'upcoming',
     src.time_format, src.geofence_radius, src.off_course_distance,
     src.stopped_time, src.missing_timer, src.alerts_enabled, src.messaging_enabled,
-    src.viewer_map_enabled, src.leaderboard_enabled, src.weather_enabled, src.id);
+    src.viewer_map_enabled, src.leaderboard_enabled, src.weather_enabled,
+    src.course_id || null, src.race_format || 'point_to_point', src.id);
 
   const newId = newRace.lastInsertRowid;
 

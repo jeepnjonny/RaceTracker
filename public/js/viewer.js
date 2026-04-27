@@ -78,8 +78,10 @@ function renderStationMarkers() {
   Object.values(stationMarkers).forEach(m => leafletMap.removeLayer(m));
   stationMarkers = {};
   for (const s of stations) {
-    const color = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' : '#d2a679';
-    const letter = s.type === 'start' ? 'S' : s.type === 'finish' ? 'F' : s.name[0]?.toUpperCase() || 'A';
+    const color = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' :
+                  s.type === 'start_finish' ? '#a371f7' : s.type === 'turnaround' ? '#58a6ff' : '#d2a679';
+    const letter = s.type === 'start' ? 'S' : s.type === 'finish' ? 'F' :
+                   s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' : s.name[0]?.toUpperCase() || 'A';
     const icon = L.divIcon({
       html: `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#000">${letter}</div>`,
       className: '', iconAnchor: [10, 10],

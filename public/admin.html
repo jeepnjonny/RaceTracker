@@ -68,6 +68,13 @@
         <label>COURSE</label>
         <select id="rm-course-id"><option value="">— None —</option></select>
       </div>
+      <div class="form-group">
+        <label>FORMAT</label>
+        <select id="rm-race-format">
+          <option value="point_to_point">Point-to-Point</option>
+          <option value="out_and_back">Out &amp; Back</option>
+        </select>
+      </div>
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -168,9 +175,11 @@
         <label>TYPE</label>
         <select id="sm-type">
           <option value="aid">Aid Station</option>
+          <option value="checkpoint">Checkpoint</option>
           <option value="start">Start</option>
           <option value="finish">Finish</option>
-          <option value="checkpoint">Checkpoint</option>
+          <option value="start_finish">Start/Finish (Out &amp; Back)</option>
+          <option value="turnaround">Turnaround (Out &amp; Back)</option>
         </select>
       </div>
       <div class="form-group"><label>CUTOFF TIME (HH:MM)</label><input id="sm-cutoff" placeholder="optional"></div>

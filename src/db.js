@@ -197,6 +197,31 @@ CREATE INDEX IF NOT EXISTS idx_messages_race ON messages(race_id, timestamp DESC
 
 // Migrations
 try { db.prepare('ALTER TABLE races ADD COLUMN course_id INTEGER REFERENCES courses(id)').run(); } catch {}
+try { db.prepare("ALTER TABLE races ADD COLUMN race_format TEXT NOT NULL DEFAULT 'point_to_point'").run(); } catch {}
+
+// Migrate stations table to add start_finish and turnaround types
+{
+  const stationsDDL = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='stations'").get();
+  if (stationsDDL && !stationsDDL.sql.includes('start_finish')) {
+    db.exec(`
+      CREATE TABLE stations_new (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        race_id       INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
+        name          TEXT    NOT NULL,
+        lat           REAL    NOT NULL,
+        lon           REAL    NOT NULL,
+        type          TEXT    NOT NULL DEFAULT 'aid'
+                      CHECK(type IN ('start','finish','aid','checkpoint','start_finish','turnaround')),
+        cutoff_time   TEXT,
+        course_order  INTEGER DEFAULT 0,
+        created_at    INTEGER DEFAULT (unixepoch())
+      );
+      INSERT INTO stations_new SELECT * FROM stations;
+      DROP TABLE stations;
+      ALTER TABLE stations_new RENAME TO stations;
+    `);
+  }
+}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

@@ -174,33 +174,56 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       recentGeofenceEvents.set(arriveKey, timestamp);
       setTimeout(() => recentGeofenceEvents.delete(arriveKey), 30000);
 
-      const eventType = station.type === 'start' ? 'start' :
-                        station.type === 'finish' ? 'finish' : 'aid_arrive';
-
-      db.prepare(`
-        INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp)
-        VALUES (?,?,?,?,?)
-      `).run(race.id, participant.id, eventType, station.id, timestamp);
+      let eventType = null;
+      let statusSql = null;
+      let statusArgs = null;
 
       if (station.type === 'start' && participant.status === 'dns') {
-        db.prepare("UPDATE participants SET status='active', start_time=? WHERE id=?")
-          .run(timestamp, participant.id);
-      }
-      if (station.type === 'finish' && participant.status === 'active') {
-        db.prepare("UPDATE participants SET status='finished', finish_time=? WHERE id=?")
-          .run(timestamp, participant.id);
+        eventType = 'start';
+        statusSql = "UPDATE participants SET status='active', start_time=? WHERE id=?";
+        statusArgs = [timestamp, participant.id];
+      } else if (station.type === 'finish' && participant.status === 'active') {
+        eventType = 'finish';
+        statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
+        statusArgs = [timestamp, participant.id];
+      } else if (station.type === 'start_finish') {
+        if (participant.status === 'dns') {
+          eventType = 'start';
+          statusSql = "UPDATE participants SET status='active', start_time=? WHERE id=?";
+          statusArgs = [timestamp, participant.id];
+        } else if (participant.status === 'active') {
+          const hasTurnaround = db.prepare(`
+            SELECT 1 FROM events
+            WHERE participant_id=? AND race_id=?
+            AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround')
+            LIMIT 1
+          `).get(participant.id, race.id, race.id);
+          if (hasTurnaround) {
+            eventType = 'finish';
+            statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
+            statusArgs = [timestamp, participant.id];
+          }
+          // else: passing start_finish on the way out — no event
+        }
+      } else if (station.type === 'turnaround' || station.type === 'aid' || station.type === 'checkpoint') {
+        eventType = 'aid_arrive';
       }
 
-      broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp });
+      if (eventType) {
+        db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
+          .run(race.id, participant.id, eventType, station.id, timestamp);
+        if (statusSql) db.prepare(statusSql).run(...statusArgs);
+        broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp });
+      }
+
     } else if (!inside && recentGeofenceEvents.has(arriveKey) && !recentGeofenceEvents.has(departKey)) {
       recentGeofenceEvents.set(departKey, timestamp);
       setTimeout(() => recentGeofenceEvents.delete(departKey), 30000);
 
-      if (station.type !== 'start' && station.type !== 'finish') {
-        db.prepare(`
-          INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp)
-          VALUES (?,?,?,?,?)
-        `).run(race.id, participant.id, 'aid_depart', station.id, timestamp);
+      const noDepart = new Set(['start', 'finish', 'start_finish']);
+      if (!noDepart.has(station.type)) {
+        db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
+          .run(race.id, participant.id, 'aid_depart', station.id, timestamp);
         broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'aid_depart', stationId: station.id, timestamp });
       }
     }
