@@ -199,10 +199,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_race ON messages(race_id, timestamp DESC
 try { db.prepare('ALTER TABLE races ADD COLUMN course_id INTEGER REFERENCES courses(id)').run(); } catch {}
 try { db.prepare("ALTER TABLE races ADD COLUMN race_format TEXT NOT NULL DEFAULT 'point_to_point'").run(); } catch {}
 
-// Migrate stations table to add start_finish and turnaround types
+// Migrate stations table to add new types (start_finish, turnaround, netcontrol, repeater)
 {
   const stationsDDL = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='stations'").get();
-  if (stationsDDL && !stationsDDL.sql.includes('start_finish')) {
+  if (stationsDDL && !stationsDDL.sql.includes('netcontrol')) {
     db.exec(`
       CREATE TABLE stations_new (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,7 +211,7 @@ try { db.prepare("ALTER TABLE races ADD COLUMN race_format TEXT NOT NULL DEFAULT
         lat           REAL    NOT NULL,
         lon           REAL    NOT NULL,
         type          TEXT    NOT NULL DEFAULT 'aid'
-                      CHECK(type IN ('start','finish','aid','checkpoint','start_finish','turnaround')),
+                      CHECK(type IN ('start','finish','aid','checkpoint','start_finish','turnaround','netcontrol','repeater')),
         cutoff_time   TEXT,
         course_order  INTEGER DEFAULT 0,
         created_at    INTEGER DEFAULT (unixepoch())
@@ -222,6 +222,13 @@ try { db.prepare("ALTER TABLE races ADD COLUMN race_format TEXT NOT NULL DEFAULT
     `);
   }
 }
+
+// Per-race feature flag migrations
+try { db.prepare('ALTER TABLE races ADD COLUMN feat_missing  INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN feat_auto_log INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN feat_auto_start INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN feat_off_course INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN feat_stopped INTEGER NOT NULL DEFAULT 1').run(); } catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

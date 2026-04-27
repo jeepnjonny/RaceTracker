@@ -7,7 +7,7 @@ let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = nu
 let leafletMap = null, currentBaseLayer = null;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
-let clockInterval = null, missingCheckInterval = null;
+let clockInterval = null, missingCheckInterval = null, stoppedCheckInterval = null;
 let fmt24 = false;
 let editingPId = null;
 
@@ -33,6 +33,7 @@ async function init() {
   await loadInitialData();
   startClock();
   missingCheckInterval = setInterval(checkMissing, 30000);
+  stoppedCheckInterval = setInterval(checkStopped, 60000);
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -156,9 +157,11 @@ function renderStationMarkers() {
   stationMarkers = {};
   for (const s of stations) {
     const color = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' :
-                  s.type === 'start_finish' ? '#a371f7' : s.type === 'turnaround' ? '#58a6ff' : '#d2a679';
+                  s.type === 'start_finish' ? '#a371f7' : s.type === 'turnaround' ? '#58a6ff' :
+                  s.type === 'netcontrol' ? '#d2993a' : s.type === 'repeater' ? '#6e7681' : '#d2a679';
     const letter = s.type === 'start' ? 'S' : s.type === 'finish' ? 'F' :
-                   s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' : s.name[0]?.toUpperCase() || 'A';
+                   s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' :
+                   s.type === 'netcontrol' ? 'N' : s.type === 'repeater' ? 'R' : s.name[0]?.toUpperCase() || 'A';
     const icon = L.divIcon({
       html: `<div style="width:22px;height:22px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#000;font-family:'Courier New'">${letter}</div>`,
       className: '', iconAnchor: [11, 11],
@@ -746,9 +749,9 @@ function appendEventLog(event) {
   el.insertBefore(div, el.firstChild);
 }
 
-// ── Missing check ─────────────────────────────────────────────────────────────
+// ── Missing / Stopped checks ──────────────────────────────────────────────────
 function checkMissing() {
-  if (!race) return;
+  if (!race || !race.feat_missing) return;
   const now = Math.floor(Date.now() / 1000);
   const missingTimer = race.missing_timer || 3600;
   for (const p of Object.values(participants)) {
@@ -766,6 +769,30 @@ function checkMissing() {
   }
   renderLeaderboard();
   renderAllMarkers();
+}
+
+function checkStopped() {
+  if (!race || !race.feat_stopped) return;
+  const now = Math.floor(Date.now() / 1000);
+  const stoppedTime = race.stopped_time || 600;
+  for (const p of Object.values(participants)) {
+    if (p.status !== 'active') continue;
+    const lastSeen = p.registry?.last_seen || 0;
+    const lastSpeed = p.registry?.last_speed ?? null;
+    // Only alert if we have recent signal but speed is 0 (or near 0) for stopped_time
+    if (!lastSeen || (now - lastSeen) > stoppedTime * 3) continue; // signal too old — missing alert handles it
+    if (lastSpeed !== null && lastSpeed < 0.5 && (now - lastSeen) > stoppedTime) {
+      const key = `stopped_${p.id}`;
+      if (!alerts.find(a => a.key === key)) {
+        alerts.push({ key, type: 'stopped', participantId: p.id, bib: p.bib, name: p.name, timestamp: now, id: Date.now() });
+        renderAlertsList();
+        updateAlertCount();
+        RT.toast(`STOPPED: Bib ${p.bib} ${p.name} — stationary for ${Math.floor((now-lastSeen)/60)} min`, 'alert', 8000);
+      }
+    } else {
+      alerts = alerts.filter(a => a.key !== `stopped_${p.id}`);
+    }
+  }
 }
 
 // ── Clock ─────────────────────────────────────────────────────────────────────

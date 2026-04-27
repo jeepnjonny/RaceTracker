@@ -162,7 +162,7 @@ function findParticipant(nodeId, raceId) {
 const recentGeofenceEvents = new Map(); // key: `${participantId}_${stationId}_arrive/depart`
 
 function checkGeofences(participant, race, lat, lon, timestamp) {
-  if (!race.alerts_enabled) return;
+  if (!race.feat_auto_log && !race.feat_auto_start) return;
   const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(race.id);
 
   for (const station of stations) {
@@ -178,20 +178,23 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       let statusSql = null;
       let statusArgs = null;
 
-      if (station.type === 'start' && participant.status === 'dns') {
+      const autoStart = race.feat_auto_start ?? 1;
+      const autoLog   = race.feat_auto_log   ?? 1;
+
+      if (station.type === 'start' && participant.status === 'dns' && autoStart) {
         eventType = 'start';
         statusSql = "UPDATE participants SET status='active', start_time=? WHERE id=?";
         statusArgs = [timestamp, participant.id];
-      } else if (station.type === 'finish' && participant.status === 'active') {
+      } else if (station.type === 'finish' && participant.status === 'active' && autoStart) {
         eventType = 'finish';
         statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
         statusArgs = [timestamp, participant.id];
       } else if (station.type === 'start_finish') {
-        if (participant.status === 'dns') {
+        if (participant.status === 'dns' && autoStart) {
           eventType = 'start';
           statusSql = "UPDATE participants SET status='active', start_time=? WHERE id=?";
           statusArgs = [timestamp, participant.id];
-        } else if (participant.status === 'active') {
+        } else if (participant.status === 'active' && autoStart) {
           const hasTurnaround = db.prepare(`
             SELECT 1 FROM events
             WHERE participant_id=? AND race_id=?
@@ -203,11 +206,11 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
             statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
             statusArgs = [timestamp, participant.id];
           }
-          // else: passing start_finish on the way out — no event
         }
-      } else if (station.type === 'turnaround' || station.type === 'aid' || station.type === 'checkpoint') {
+      } else if (autoLog && (station.type === 'turnaround' || station.type === 'aid' || station.type === 'checkpoint')) {
         eventType = 'aid_arrive';
       }
+      // netcontrol and repeater: no geofencing
 
       if (eventType) {
         db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
@@ -263,7 +266,7 @@ function getRouteData(race) {
 const lastOffCourseAlert = new Map();
 
 function checkOffCourse(participant, race, lat, lon, timestamp) {
-  if (!race.alerts_enabled || !race.off_course_distance) return;
+  if (!race.feat_off_course || !race.off_course_distance) return;
   const route = getRouteData(race);
   if (!route) return;
   const { distanceFromRoute } = geo.findPositionOnRoute(lat, lon, route.points, route.meta);

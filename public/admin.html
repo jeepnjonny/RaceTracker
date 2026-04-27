@@ -81,16 +81,40 @@
         <label>TIME FORMAT</label>
         <select id="rm-time-format"><option value="12h">12-Hour</option><option value="24h" selected>24-Hour</option></select>
       </div>
-      <div class="form-group"><label>MISSING TIMER (min)</label><input id="rm-missing-timer" value="60" type="number" min="1"></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>AID STATION AUTO LOG (m)</label><input id="rm-geofence" value="15" type="number"></div>
-      <div class="form-group"><label>OFF-COURSE DISTANCE (m)</label><input id="rm-off-course" value="100" type="number"></div>
-      <div class="form-group"><label>STOPPED ALERT (min)</label><input id="rm-stopped" value="10" type="number" min="1"></div>
+    <div class="section-header">ALERTS &amp; AUTOMATION</div>
+    <div style="display:flex;flex-direction:column;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px">
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
+        <input type="checkbox" id="rm-feat-missing" checked>
+        <label for="rm-feat-missing" style="flex:1;font-size:12px;cursor:pointer">Missing timer</label>
+        <input id="rm-missing-timer" type="number" min="1" value="60" style="width:64px;text-align:right">
+        <span style="font-size:11px;color:var(--text3);min-width:24px">min</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
+        <input type="checkbox" id="rm-feat-auto-log" checked>
+        <label for="rm-feat-auto-log" style="flex:1;font-size:12px;cursor:pointer">Auto-log aid stations (geofence)</label>
+        <input id="rm-geofence" type="number" min="1" value="15" style="width:64px;text-align:right">
+        <span style="font-size:11px;color:var(--text3);min-width:24px">m</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
+        <input type="checkbox" id="rm-feat-auto-start" checked>
+        <label for="rm-feat-auto-start" style="flex:1;font-size:12px;cursor:pointer">Auto-start / finish participants</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
+        <input type="checkbox" id="rm-feat-off-course" checked>
+        <label for="rm-feat-off-course" style="flex:1;font-size:12px;cursor:pointer">Off-course alert</label>
+        <input id="rm-off-course" type="number" min="1" value="100" style="width:64px;text-align:right">
+        <span style="font-size:11px;color:var(--text3);min-width:24px">m</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
+        <input type="checkbox" id="rm-feat-stopped" checked>
+        <label for="rm-feat-stopped" style="flex:1;font-size:12px;cursor:pointer">Stopped alert</label>
+        <input id="rm-stopped" type="number" min="1" value="10" style="width:64px;text-align:right">
+        <span style="font-size:11px;color:var(--text3);min-width:24px">min</span>
+      </div>
     </div>
     <div class="section-header">FEATURES</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-      <div class="checkbox-row"><input type="checkbox" id="rm-alerts" checked><label for="rm-alerts">Alerts enabled</label></div>
       <div class="checkbox-row"><input type="checkbox" id="rm-messaging"><label for="rm-messaging">Operator messaging</label></div>
       <div class="checkbox-row"><input type="checkbox" id="rm-viewer-map" checked><label for="rm-viewer-map">Viewer map</label></div>
       <div class="checkbox-row"><input type="checkbox" id="rm-leaderboard" checked><label for="rm-leaderboard">Viewer leaderboard</label></div>

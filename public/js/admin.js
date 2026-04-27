@@ -192,7 +192,11 @@ async function openRaceModal(id) {
   document.getElementById('rm-geofence').value       = race?.geofence_radius || 15;
   document.getElementById('rm-off-course').value     = race?.off_course_distance || 100;
   document.getElementById('rm-stopped').value        = Math.round((race?.stopped_time || 600) / 60);
-  document.getElementById('rm-alerts').checked       = !!(race?.alerts_enabled ?? 1);
+  document.getElementById('rm-feat-missing').checked    = !!(race?.feat_missing   ?? 1);
+  document.getElementById('rm-feat-auto-log').checked   = !!(race?.feat_auto_log  ?? 1);
+  document.getElementById('rm-feat-auto-start').checked = !!(race?.feat_auto_start ?? 1);
+  document.getElementById('rm-feat-off-course').checked = !!(race?.feat_off_course ?? 1);
+  document.getElementById('rm-feat-stopped').checked    = !!(race?.feat_stopped    ?? 1);
   document.getElementById('rm-messaging').checked    = !!(race?.messaging_enabled);
   document.getElementById('rm-viewer-map').checked   = !!(race?.viewer_map_enabled ?? 1);
   document.getElementById('rm-leaderboard').checked  = !!(race?.leaderboard_enabled ?? 1);
@@ -216,7 +220,11 @@ async function saveRace() {
     geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
     off_course_distance: parseInt(document.getElementById('rm-off-course').value),
     stopped_time:        parseInt(document.getElementById('rm-stopped').value) * 60,
-    alerts_enabled:      document.getElementById('rm-alerts').checked ? 1 : 0,
+    feat_missing:        document.getElementById('rm-feat-missing').checked    ? 1 : 0,
+    feat_auto_log:       document.getElementById('rm-feat-auto-log').checked   ? 1 : 0,
+    feat_auto_start:     document.getElementById('rm-feat-auto-start').checked ? 1 : 0,
+    feat_off_course:     document.getElementById('rm-feat-off-course').checked ? 1 : 0,
+    feat_stopped:        document.getElementById('rm-feat-stopped').checked    ? 1 : 0,
     messaging_enabled:   document.getElementById('rm-messaging').checked ? 1 : 0,
     viewer_map_enabled:  document.getElementById('rm-viewer-map').checked ? 1 : 0,
     leaderboard_enabled: document.getElementById('rm-leaderboard').checked ? 1 : 0,
@@ -380,10 +388,10 @@ let courseParseData = null; // { paths, points, trackPoints, totalDistance, path
 function renderCourseTab() {
   const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
   return `
-  <div style="display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start">
+  <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:12px;align-items:start">
     <!-- Left: course file list -->
     <div>
-      <div class="card" style="margin-bottom:0">
+      <div class="card" style="margin-bottom:0;overflow:hidden">
         <h3>KML / GPX LIBRARY</h3>
         <div style="margin-bottom:8px">
           <div class="upload-zone" onclick="document.getElementById('course-upload-input').click()" style="padding:8px;cursor:pointer">
@@ -404,10 +412,10 @@ function renderCourseTab() {
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start;margin-top:12px">
+  <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:12px;align-items:start;margin-top:12px">
     <!-- Left: CSV file list -->
     <div>
-      <div class="card" style="margin-bottom:0">
+      <div class="card" style="margin-bottom:0;overflow:hidden">
         <h3>STATION CSV LIBRARY</h3>
         <div style="margin-bottom:8px">
           <div class="upload-zone" onclick="document.getElementById('csv-lib-input').click()" style="padding:8px;cursor:pointer">
@@ -466,12 +474,14 @@ function renderCourseFileList() {
   const el = document.getElementById('course-file-list');
   if (!el) return;
   if (!courseFiles.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No course files uploaded yet.</div>'; return; }
+  el.style.maxHeight = '360px';
+  el.style.overflowY = 'auto';
   el.innerHTML = courseFiles.map(c => `
-    <div class="infra-row" style="cursor:pointer;border-radius:4px;${c.id===selectedCourseId?'background:var(--surface3,#161b22);':''}" onclick="selectCourse(${c.id})">
-      <span class="infra-node" style="min-width:unset;flex:1;font-size:12px">${c.name}</span>
-      <span class="badge" style="color:${c.file_type==='kml'?'var(--accent4)':'var(--accent)'};">${c.file_type.toUpperCase()}</span>
-      <button style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();renameCourse(${c.id})">REN</button>
-      <button class="danger" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();deleteCourse(${c.id})">DEL</button>
+    <div class="infra-row" style="cursor:pointer;border-radius:4px;min-width:0;${c.id===selectedCourseId?'background:var(--surface3,#161b22);':''}" onclick="selectCourse(${c.id})">
+      <span title="${c.name}" style="flex:1;font-size:12px;font-weight:bold;color:var(--accent4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${c.name}</span>
+      <span class="badge" style="flex-shrink:0;color:${c.file_type==='kml'?'var(--accent4)':'var(--accent)'};">${c.file_type.toUpperCase()}</span>
+      <button style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();renameCourse(${c.id})">REN</button>
+      <button class="danger" style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();deleteCourse(${c.id})">DEL</button>
     </div>`).join('');
 }
 
@@ -678,11 +688,13 @@ function renderCsvLibList() {
   const el = document.getElementById('csv-lib-list');
   if (!el) return;
   if (!csvFilesList.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No CSV files uploaded yet.</div>'; return; }
+  el.style.maxHeight = '360px';
+  el.style.overflowY = 'auto';
   el.innerHTML = csvFilesList.map(f => `
-    <div class="infra-row" style="cursor:pointer;border-radius:4px;${f.id===selectedCsvId?'background:var(--surface3,#161b22);':''}" onclick="selectCsvFile(${f.id})">
-      <span style="flex:1;font-size:12px;color:var(--text)">${f.name}</span>
-      <button style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();renameCsvFile(${f.id})">REN</button>
-      <button class="danger" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();deleteCsvFile(${f.id})">DEL</button>
+    <div class="infra-row" style="cursor:pointer;border-radius:4px;min-width:0;${f.id===selectedCsvId?'background:var(--surface3,#161b22);':''}" onclick="selectCsvFile(${f.id})">
+      <span title="${f.name}" style="flex:1;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${f.name}</span>
+      <button style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();renameCsvFile(${f.id})">REN</button>
+      <button class="danger" style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();deleteCsvFile(${f.id})">DEL</button>
     </div>`).join('');
 }
 
