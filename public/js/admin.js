@@ -5,13 +5,14 @@ let editingRaceId = null, editingUserId = null, editingHeatId = null;
 let selectedRaceId = null; // race being configured in sub-tabs
 
 const TABS = [
-  { id: 'races',     label: 'RACES' },
-  { id: 'heats',     label: 'HEATS/CLASSES' },
-  { id: 'course',    label: 'COURSE' },
-  { id: 'personnel', label: 'PERSONNEL' },
-  { id: 'infra',     label: 'INFRASTRUCTURE' },
-  { id: 'users',     label: 'USERS' },
-  { id: 'settings',  label: 'SETTINGS' },
+  { id: 'races',        label: 'RACES' },
+  { id: 'heats',        label: 'HEATS/CLASSES' },
+  { id: 'participants', label: 'PARTICIPANTS' },
+  { id: 'course',       label: 'COURSE' },
+  { id: 'personnel',    label: 'PERSONNEL' },
+  { id: 'infra',        label: 'INFRASTRUCTURE' },
+  { id: 'users',        label: 'USERS' },
+  { id: 'settings',     label: 'SETTINGS' },
 ];
 let currentTab = 'races';
 
@@ -74,10 +75,11 @@ async function loadRaces() {
 function renderTab() {
   const el = document.getElementById('admin-content');
   switch (currentTab) {
-    case 'races':     el.innerHTML = renderRacesTab(); bindRacesTab(); break;
-    case 'heats':     el.innerHTML = renderHeatsTab(); bindHeatsTab(); break;
-    case 'course':    el.innerHTML = renderCourseTab(); bindCourseTab(); break;
-    case 'personnel': el.innerHTML = renderPersonnelTab(); bindPersonnelTab(); break;
+    case 'races':        el.innerHTML = renderRacesTab(); bindRacesTab(); break;
+    case 'heats':        el.innerHTML = renderHeatsTab(); bindHeatsTab(); break;
+    case 'participants': el.innerHTML = renderParticipantsTab(); bindParticipantsTab(); break;
+    case 'course':       el.innerHTML = renderCourseTab(); bindCourseTab(); break;
+    case 'personnel':    el.innerHTML = renderPersonnelTab(); bindPersonnelTab(); break;
     case 'infra':     el.innerHTML = renderInfraTab(); refreshInfra(); break;
     case 'users':     el.innerHTML = renderUsersTab(); loadUsers(); break;
     case 'settings':  el.innerHTML = renderSettingsTab(); bindSettingsTab(); break;
@@ -890,6 +892,216 @@ async function deleteStation(id) {
   await loadStations();
 }
 
+// ── Participants ──────────────────────────────────────────────────────────────
+let participants = [], participantsCsvContent = '';
+let editingParticipantId = null;
+
+function renderParticipantsTab() {
+  const opts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
+  return `
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h3 style="margin:0">PARTICIPANTS</h3>
+      <select id="pt-race-sel" onchange="selectedRaceId=parseInt(this.value);loadParticipants()" style="margin-left:4px;font-size:11px;padding:3px 6px">${opts}</select>
+    </div>
+    <div id="pt-summary" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="primary" onclick="openParticipantModal()">+ ADD</button>
+      <button onclick="togglePtCsvPanel()">CSV IMPORT</button>
+      <button onclick="exportParticipantsCsv()">CSV EXPORT</button>
+      <button class="danger" onclick="clearAllParticipants()" style="margin-left:auto">CLEAR ALL</button>
+    </div>
+    <div id="pt-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:10px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">
+        CSV columns: <code>bib, name, tracker_id, heat, class, age, phone, emergency_contact</code><br>
+        First row must be a header. Heat/class matched by name. Duplicate bibs are updated.
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('pt-csv-input').click()" id="pt-csv-zone">
+        <span id="pt-csv-label" style="font-size:11px">&#8593; Select CSV file</span>
+        <input type="file" id="pt-csv-input" accept=".csv" style="display:none" onchange="ptCsvSelected(this)">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="pt-csv-btn" onclick="importParticipantsCsv()" disabled>IMPORT</button>
+        <button onclick="togglePtCsvPanel()">CANCEL</button>
+      </div>
+    </div>
+    <div id="participants-list" style="margin-top:10px"></div>
+  </div>`;
+}
+
+async function bindParticipantsTab() { await loadParticipants(); }
+
+async function loadParticipants() {
+  if (!selectedRaceId) return;
+  const [pr, hr, cr] = await Promise.all([
+    RT.get(`/api/races/${selectedRaceId}/participants`),
+    RT.get(`/api/races/${selectedRaceId}/heats`),
+    RT.get(`/api/races/${selectedRaceId}/classes`),
+  ]);
+  participants = pr.ok ? pr.data : [];
+  heats        = hr.ok ? hr.data : [];
+  classes      = cr.ok ? cr.data : [];
+  renderParticipantSummary();
+  renderParticipantsList();
+}
+
+function renderParticipantSummary() {
+  const el = document.getElementById('pt-summary');
+  if (!el) return;
+  const counts = { dns:0, active:0, dnf:0, finished:0 };
+  participants.forEach(p => { if (counts[p.status] != null) counts[p.status]++; });
+  const colors = { dns:'var(--text3)', active:'var(--accent)', dnf:'var(--accent3)', finished:'var(--accent2)' };
+  el.innerHTML = Object.entries(counts).map(([s, n]) =>
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 12px;text-align:center">
+      <div style="font-size:18px;font-weight:bold;color:${colors[s]}">${n}</div>
+      <div style="font-size:10px;color:var(--text3);letter-spacing:1px">${s.toUpperCase()}</div>
+    </div>`
+  ).join('') + `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 12px;text-align:center">
+    <div style="font-size:18px;font-weight:bold;color:var(--text)">${participants.length}</div>
+    <div style="font-size:10px;color:var(--text3);letter-spacing:1px">TOTAL</div>
+  </div>`;
+}
+
+function renderParticipantsList() {
+  const el = document.getElementById('participants-list');
+  if (!el) return;
+  if (!participants.length) {
+    el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No participants yet. Add manually or import a CSV.</div>';
+    return;
+  }
+  const STATUS_C = { dns:'var(--text3)', active:'var(--accent)', dnf:'var(--accent3)', finished:'var(--accent2)' };
+  el.innerHTML = `<table class="data-table">
+    <thead><tr><th>#</th><th>BIB</th><th>NAME</th><th>HEAT</th><th>CLASS</th><th>TRACKER</th><th>STATUS</th><th>AGE</th><th></th></tr></thead>
+    <tbody>${participants.map((p, i) => {
+      const heat = heats.find(h => h.id === p.heat_id);
+      const cls  = classes.find(c => c.id === p.class_id);
+      const dot  = heat ? `<span class="dot" style="background:${heat.color}"></span>` : '';
+      return `<tr>
+        <td class="text-dim">${i+1}</td>
+        <td style="font-weight:bold">${p.bib}</td>
+        <td>${p.name}</td>
+        <td style="white-space:nowrap">${dot} ${heat?.name || '<span class="text-dim">—</span>'}</td>
+        <td>${cls?.name || '<span class="text-dim">—</span>'}</td>
+        <td style="font-size:10px;color:var(--accent4)">${p.tracker_id || '<span class="text-dim">—</span>'}</td>
+        <td><span style="color:${STATUS_C[p.status]||'var(--text3)'};font-size:10px;letter-spacing:1px">${(p.status||'dns').toUpperCase()}</span></td>
+        <td class="text-dim">${p.age || '—'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button style="font-size:10px;padding:2px 8px" onclick="openParticipantModal(${p.id})">EDIT</button>
+          <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deleteParticipant(${p.id})">DEL</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function openParticipantModal(id) {
+  editingParticipantId = id || null;
+  const p = id ? participants.find(x => x.id === id) : null;
+  document.getElementById('pm2-title').textContent = id ? 'EDIT PARTICIPANT' : 'NEW PARTICIPANT';
+  document.getElementById('pm2-bib').value               = p?.bib || '';
+  document.getElementById('pm2-name').value              = p?.name || '';
+  document.getElementById('pm2-tracker').value           = p?.tracker_id || '';
+  document.getElementById('pm2-age').value               = p?.age || '';
+  document.getElementById('pm2-phone').value             = p?.phone || '';
+  document.getElementById('pm2-emergency').value         = p?.emergency_contact || '';
+  document.getElementById('pm2-status').value            = p?.status || 'dns';
+  // Populate heat/class selects
+  const hSel = document.getElementById('pm2-heat');
+  hSel.innerHTML = '<option value="">— None —</option>' +
+    heats.map(h => `<option value="${h.id}"${h.id===p?.heat_id?' selected':''}>${h.name}</option>`).join('');
+  const cSel = document.getElementById('pm2-class');
+  cSel.innerHTML = '<option value="">— None —</option>' +
+    classes.map(c => `<option value="${c.id}"${c.id===p?.class_id?' selected':''}>${c.name}</option>`).join('');
+  document.getElementById('participant-modal').classList.remove('hidden');
+  document.getElementById('pm2-bib').focus();
+}
+
+async function saveParticipant() {
+  const bib  = document.getElementById('pm2-bib').value.trim();
+  const name = document.getElementById('pm2-name').value.trim();
+  if (!bib || !name) { RT.toast('Bib and name required', 'warn'); return; }
+  const body = {
+    bib,
+    name,
+    tracker_id:        document.getElementById('pm2-tracker').value.trim() || null,
+    age:               parseInt(document.getElementById('pm2-age').value) || null,
+    phone:             document.getElementById('pm2-phone').value.trim() || null,
+    emergency_contact: document.getElementById('pm2-emergency').value.trim() || null,
+    status:            document.getElementById('pm2-status').value,
+    heat_id:           document.getElementById('pm2-heat').value   ? parseInt(document.getElementById('pm2-heat').value)  : null,
+    class_id:          document.getElementById('pm2-class').value  ? parseInt(document.getElementById('pm2-class').value) : null,
+  };
+  const res = editingParticipantId
+    ? await RT.put(`/api/races/${selectedRaceId}/participants/${editingParticipantId}`, body)
+    : await RT.post(`/api/races/${selectedRaceId}/participants`, body);
+  if (res.ok) {
+    closeModal('participant-modal');
+    await loadParticipants();
+    RT.toast(editingParticipantId ? 'Participant updated' : 'Participant added', 'ok');
+  } else RT.toast(res.error, 'warn');
+}
+
+async function deleteParticipant(id) {
+  const p = participants.find(x => x.id === id);
+  if (!confirm(`Delete ${p?.name || 'participant'} (Bib ${p?.bib})?`)) return;
+  const res = await RT.del(`/api/races/${selectedRaceId}/participants/${id}`);
+  if (res.ok) { await loadParticipants(); RT.toast('Participant deleted', 'ok'); }
+  else RT.toast(res.error, 'warn');
+}
+
+async function clearAllParticipants() {
+  if (!confirm(`Delete ALL participants from this race? This cannot be undone.`)) return;
+  const ids = participants.map(p => p.id);
+  await Promise.all(ids.map(id => RT.del(`/api/races/${selectedRaceId}/participants/${id}`)));
+  await loadParticipants();
+  RT.toast('All participants cleared', 'ok');
+}
+
+function togglePtCsvPanel() {
+  participantsCsvContent = '';
+  document.getElementById('pt-csv-label').textContent = '↑ Select CSV file';
+  document.getElementById('pt-csv-btn').disabled = true;
+  document.getElementById('pt-csv-panel').classList.toggle('hidden');
+}
+
+function ptCsvSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    participantsCsvContent = e.target.result;
+    document.getElementById('pt-csv-label').textContent = `✓ ${file.name}`;
+    document.getElementById('pt-csv-btn').disabled = false;
+  };
+  reader.readAsText(file);
+}
+
+async function importParticipantsCsv() {
+  if (!participantsCsvContent) return;
+  const res = await RT.post(`/api/races/${selectedRaceId}/participants/import`, { csv: participantsCsvContent });
+  if (res.ok) {
+    const errors = res.errors || [];
+    document.getElementById('pt-csv-panel').classList.add('hidden');
+    await loadParticipants();
+    RT.toast(`Imported ${res.data?.length || 0} participants${errors.length ? ` (${errors.length} skipped)` : ''}`, errors.length ? 'warn' : 'ok');
+    if (errors.length) console.warn('Import errors:', errors);
+  } else RT.toast(res.error, 'warn');
+}
+
+function exportParticipantsCsv() {
+  const header = 'bib,name,tracker_id,heat,class,age,phone,emergency_contact,status';
+  const rows = participants.map(p => {
+    const heat = heats.find(h => h.id === p.heat_id);
+    const cls  = classes.find(c => c.id === p.class_id);
+    return [p.bib, p.name, p.tracker_id||'', heat?.name||'', cls?.name||'',
+            p.age||'', p.phone||'', p.emergency_contact||'', p.status].map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
+  });
+  const csv = [header, ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = `participants_race${selectedRaceId}.csv`;
+  a.click();
+}
+
 // ── Personnel ─────────────────────────────────────────────────────────────────
 let personnel = [], personnelCsvContent = '';
 function renderPersonnelTab() {
@@ -1208,9 +1420,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
     const modal = e.target.closest('.modal-bg');
     if (!modal) return;
-    if (modal.id === 'personnel-modal') savePersonnel();
-    if (modal.id === 'station-modal')   saveStation();
-    if (modal.id === 'user-modal')      saveUser();
+    if (modal.id === 'participant-modal') saveParticipant();
+    if (modal.id === 'personnel-modal')  savePersonnel();
+    if (modal.id === 'station-modal')    saveStation();
+    if (modal.id === 'user-modal')       saveUser();
   }
 });
 
