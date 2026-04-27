@@ -212,15 +212,26 @@ const routeCache = new Map(); // raceId -> { points, meta }
 
 function getRouteData(race) {
   if (routeCache.has(race.id)) return routeCache.get(race.id);
-  if (!race.track_file) return null;
   try {
     const fs = require('fs');
-    const raw = fs.readFileSync(race.track_file, 'utf8');
-    const { parseTrack } = require('./routes/tracks');
-    const parsed = parseTrack(raw, race.track_file, race.track_path_index);
-    if (!parsed) return null;
-    const meta = geo.buildTrackMeta(parsed);
-    const data = { points: parsed, meta };
+    let trackPoints = null;
+    if (race.course_id) {
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(race.course_id);
+      if (course) {
+        const raw = fs.readFileSync(course.file_path, 'utf8');
+        const { parseCourse } = require('./routes/courses');
+        const parsed = parseCourse(raw, course.file_path, course.path_index);
+        trackPoints = parsed.trackPoints;
+      }
+    }
+    if (!trackPoints && race.track_file) {
+      const raw = fs.readFileSync(race.track_file, 'utf8');
+      const { parseTrack } = require('./routes/tracks');
+      trackPoints = parseTrack(raw, race.track_file, race.track_path_index);
+    }
+    if (!trackPoints) return null;
+    const meta = geo.buildTrackMeta(trackPoints);
+    const data = { points: trackPoints, meta };
     routeCache.set(race.id, data);
     return data;
   } catch { return null; }

@@ -30,6 +30,11 @@
     border-bottom: 1px solid var(--border); font-size: 11px; }
   .infra-node { color: var(--accent4); font-weight: bold; min-width: 100px; }
   .icon-preview { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+  @media (max-width: 700px) {
+    #admin-content > div[style*="grid-template-columns:300px"] {
+      display: flex !important; flex-direction: column;
+    }
+  }
 </style>
 </head>
 <body>
@@ -58,6 +63,12 @@
       <div class="form-group"><label>DATE</label><input type="date" id="rm-date"></div>
     </div>
     <div class="section-header">RACE SETTINGS</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>COURSE</label>
+        <select id="rm-course-id"><option value="">— None —</option></select>
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-group">
         <label>TIME FORMAT</label>

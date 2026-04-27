@@ -7,7 +7,7 @@ let selectedRaceId = null; // race being configured in sub-tabs
 const TABS = [
   { id: 'races',     label: 'RACES' },
   { id: 'heats',     label: 'HEATS/CLASSES' },
-  { id: 'stations',  label: 'STATIONS' },
+  { id: 'course',    label: 'COURSE' },
   { id: 'personnel', label: 'PERSONNEL' },
   { id: 'infra',     label: 'INFRASTRUCTURE' },
   { id: 'users',     label: 'USERS' },
@@ -76,7 +76,7 @@ function renderTab() {
   switch (currentTab) {
     case 'races':     el.innerHTML = renderRacesTab(); bindRacesTab(); break;
     case 'heats':     el.innerHTML = renderHeatsTab(); bindHeatsTab(); break;
-    case 'stations':  el.innerHTML = renderStationsTab(); bindStationsTab(); break;
+    case 'course':    el.innerHTML = renderCourseTab(); bindCourseTab(); break;
     case 'personnel': el.innerHTML = renderPersonnelTab(); bindPersonnelTab(); break;
     case 'infra':     el.innerHTML = renderInfraTab(); refreshInfra(); break;
     case 'users':     el.innerHTML = renderUsersTab(); loadUsers(); break;
@@ -180,7 +180,7 @@ async function cloneRace(id) {
 }
 
 // ── Race Modal ────────────────────────────────────────────────────────────────
-function openRaceModal(id) {
+async function openRaceModal(id) {
   editingRaceId = id || null;
   const race = id ? races.find(r => r.id === id) : null;
   document.getElementById('race-modal-title').textContent = id ? 'EDIT RACE' : 'NEW RACE';
@@ -196,10 +196,16 @@ function openRaceModal(id) {
   document.getElementById('rm-viewer-map').checked   = !!(race?.viewer_map_enabled ?? 1);
   document.getElementById('rm-leaderboard').checked  = !!(race?.leaderboard_enabled ?? 1);
   document.getElementById('rm-weather').checked      = !!(race?.weather_enabled);
+  // Populate course dropdown
+  const cr = await RT.get('/api/courses');
+  const cSel = document.getElementById('rm-course-id');
+  cSel.innerHTML = '<option value="">— None —</option>' +
+    (cr.ok ? cr.data : []).map(c => `<option value="${c.id}"${race?.course_id===c.id?' selected':''}>${c.name} (${c.file_type.toUpperCase()})</option>`).join('');
   document.getElementById('race-modal').classList.remove('hidden');
 }
 
 async function saveRace() {
+  const courseVal = document.getElementById('rm-course-id').value;
   const body = {
     name:                document.getElementById('rm-name').value.trim(),
     date:                document.getElementById('rm-date').value,
@@ -213,6 +219,7 @@ async function saveRace() {
     viewer_map_enabled:  document.getElementById('rm-viewer-map').checked ? 1 : 0,
     leaderboard_enabled: document.getElementById('rm-leaderboard').checked ? 1 : 0,
     weather_enabled:     document.getElementById('rm-weather').checked ? 1 : 0,
+    course_id:           courseVal ? parseInt(courseVal) : null,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId
@@ -223,8 +230,8 @@ async function saveRace() {
     if (!editingRaceId && res.data?.id) {
       selectedRaceId = res.data.id;
       await loadRaces();
-      showTab('stations');
-      RT.toast('Race created — set up track and aid stations below', 'ok');
+      showTab('course');
+      RT.toast('Race created — assign a course and seed aid stations below', 'ok');
     } else {
       RT.toast('Race updated', 'ok');
       await loadRaces(); renderTab();
@@ -351,137 +358,354 @@ async function deleteClass(id) {
   await loadHeatsClasses();
 }
 
-// ── Stations ──────────────────────────────────────────────────────────────────
-function renderStationsTab() {
-  const opts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
+// ── Course File Library ───────────────────────────────────────────────────────
+let courseFiles = [], selectedCourseId = null;
+let csvFilesList = [], selectedCsvId = null;
+let courseParseData = null; // { paths, points, trackPoints, totalDistance, pathIndex }
+
+function renderCourseTab() {
+  const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
   return `
-  <div class="card">
-    <h3>SELECT RACE</h3>
-    <select id="st-race-sel" onchange="selectedRaceId=parseInt(this.value);loadStations()">${opts}</select>
-  </div>
-  <div class="card">
-    <h3>TRACK FILE</h3>
-    <div class="upload-zone" onclick="document.getElementById('track-file-input').click()">
-      <div id="track-file-label">&#8593; Upload KML or GPX file</div>
-      <input type="file" id="track-file-input" accept=".kml,.gpx" style="display:none" onchange="uploadTrack(this)">
+  <div style="display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start">
+    <!-- Left: course file list -->
+    <div>
+      <div class="card" style="margin-bottom:0">
+        <h3>KML / GPX LIBRARY</h3>
+        <div style="margin-bottom:8px">
+          <div class="upload-zone" onclick="document.getElementById('course-upload-input').click()" style="padding:8px;cursor:pointer">
+            <span style="font-size:11px">&#8593; Upload KML or GPX</span>
+            <input type="file" id="course-upload-input" accept=".kml,.gpx" style="display:none" onchange="uploadCourseFile(this)">
+          </div>
+        </div>
+        <div id="course-file-list"><div class="text-dim" style="font-size:12px;padding:6px">Loading...</div></div>
+      </div>
     </div>
-    <div id="path-selector" class="hidden" style="margin-top:10px"></div>
+    <!-- Right: course detail panel -->
+    <div id="course-detail-panel">
+      <div class="card" style="margin-bottom:0">
+        <div id="course-detail-inner" style="color:var(--text3);font-size:12px;padding:20px;text-align:center">
+          Select a course file to preview
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="card">
-    <h3>AID STATIONS / POINTS</h3>
+
+  <div style="display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start;margin-top:12px">
+    <!-- Left: CSV file list -->
+    <div>
+      <div class="card" style="margin-bottom:0">
+        <h3>STATION CSV LIBRARY</h3>
+        <div style="margin-bottom:8px">
+          <div class="upload-zone" onclick="document.getElementById('csv-lib-input').click()" style="padding:8px;cursor:pointer">
+            <span style="font-size:11px">&#8593; Upload CSV</span>
+            <input type="file" id="csv-lib-input" accept=".csv" style="display:none" onchange="uploadCsvFile(this)">
+          </div>
+        </div>
+        <div id="csv-lib-list"><div class="text-dim" style="font-size:12px;padding:6px">Loading...</div></div>
+      </div>
+    </div>
+    <!-- Right: CSV detail -->
+    <div id="csv-detail-panel">
+      <div class="card" style="margin-bottom:0">
+        <div id="csv-detail-inner" style="color:var(--text3);font-size:12px;padding:20px;text-align:center">
+          Select a CSV file to preview
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3>RACE STATIONS
+      <select id="st-race-sel" onchange="selectedRaceId=parseInt(this.value);loadStations()" style="margin-left:12px;font-size:11px;padding:3px 6px">${raceOpts}</select>
+    </h3>
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <button class="primary" onclick="openStationModal()">+ ADD STATION</button>
-      <button onclick="showCsvImport('stations')">CSV IMPORT</button>
+      <button class="primary" onclick="openStationModal()">+ ADD</button>
+      <button onclick="showInlineCsvImport()">CSV IMPORT</button>
+    </div>
+    <div id="inline-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">
+      <div class="text-dim" style="font-size:11px;margin-bottom:6px">Columns: name, lat, lon, type (start/finish/aid/checkpoint), cutoff_time</div>
+      <div class="upload-zone" onclick="document.getElementById('inline-csv-input').click()" style="padding:8px">
+        <div id="inline-csv-label">&#8593; Select CSV file</div>
+        <input type="file" id="inline-csv-input" accept=".csv" style="display:none" onchange="inlineCsvSelected(this)">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="inline-csv-btn" disabled onclick="importStationsCsv()">IMPORT</button>
+        <button onclick="document.getElementById('inline-csv-panel').classList.add('hidden')">CANCEL</button>
+      </div>
     </div>
     <div id="stations-list"></div>
-  </div>
-  <div id="csv-import-panel" class="hidden card">
-    <h3 id="csv-import-title">CSV IMPORT</h3>
-    <div class="text-dim" id="csv-import-hint" style="font-size:11px;margin-bottom:8px"></div>
-    <div class="upload-zone" onclick="document.getElementById('csv-file-input').click()" id="csv-drop-zone">
-      <div id="csv-file-label">&#8593; Click to select CSV file</div>
-      <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="csvFileSelected(this)">
-    </div>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="primary" onclick="importCsv()" id="csv-import-btn" disabled>IMPORT</button>
-      <button onclick="document.getElementById('csv-import-panel').classList.add('hidden')">CANCEL</button>
-    </div>
   </div>`;
 }
 
-let csvImportTarget = '', csvFileContent = '';
-const CSV_HINTS = {
-  stations:     'Columns: name, lat, lon, type (start/finish/aid/checkpoint), cutoff_time',
-  participants: 'Columns: bib, name, tracker_id, heat, class, age, phone, emergency_contact',
-  personnel:    'Columns: name, station_name, tracker_id, phone',
-};
-
-function showCsvImport(target) {
-  csvImportTarget = target;
-  csvFileContent = '';
-  document.getElementById('csv-file-label').textContent = '↑ Click to select CSV file';
-  document.getElementById('csv-import-btn').disabled = true;
-  document.getElementById('csv-import-title').textContent = 'CSV IMPORT — ' + target.toUpperCase();
-  document.getElementById('csv-import-hint').textContent = CSV_HINTS[target] || '';
-  document.getElementById('csv-import-panel').classList.remove('hidden');
+async function bindCourseTab() {
+  await Promise.all([loadCourseFiles(), loadCsvLibFiles(), loadStations()]);
 }
 
-function csvFileSelected(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    csvFileContent = e.target.result;
-    document.getElementById('csv-file-label').textContent = `✓ ${file.name}`;
-    document.getElementById('csv-import-btn').disabled = false;
-  };
-  reader.readAsText(file);
+// ── KML/GPX course library ────────────────────────────────────────────────────
+async function loadCourseFiles() {
+  const res = await RT.get('/api/courses');
+  courseFiles = res.ok ? res.data : [];
+  renderCourseFileList();
 }
 
-async function importCsv() {
-  if (!csvFileContent) return;
-  const url = csvImportTarget === 'stations'
-    ? `/api/races/${selectedRaceId}/stations/import`
-    : csvImportTarget === 'personnel'
-    ? `/api/races/${selectedRaceId}/personnel/import`
-    : `/api/races/${selectedRaceId}/participants/import`;
-  const res = await RT.post(url, { csv: csvFileContent });
-  if (res.ok) {
-    RT.toast('Imported successfully', 'ok');
-    document.getElementById('csv-import-panel').classList.add('hidden');
-    if (csvImportTarget === 'stations') loadStations();
-    else if (csvImportTarget === 'personnel') loadPersonnel();
-  } else RT.toast(res.error, 'warn');
+function renderCourseFileList() {
+  const el = document.getElementById('course-file-list');
+  if (!el) return;
+  if (!courseFiles.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No course files uploaded yet.</div>'; return; }
+  el.innerHTML = courseFiles.map(c => `
+    <div class="infra-row" style="cursor:pointer;border-radius:4px;${c.id===selectedCourseId?'background:var(--surface3,#161b22);':''}" onclick="selectCourse(${c.id})">
+      <span class="infra-node" style="min-width:unset;flex:1;font-size:12px">${c.name}</span>
+      <span class="badge" style="color:${c.file_type==='kml'?'var(--accent4)':'var(--accent)'};">${c.file_type.toUpperCase()}</span>
+      <button style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();renameCourse(${c.id})">REN</button>
+      <button class="danger" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();deleteCourse(${c.id})">DEL</button>
+    </div>`).join('');
 }
 
-async function bindStationsTab() { await loadStations(); checkTrackFile(); }
-
-async function checkTrackFile() {
-  if (!selectedRaceId) return;
-  const res = await RT.get(`/api/races/${selectedRaceId}/tracks/parse`);
-  if (res.ok && res.data) {
-    document.getElementById('track-file-label').textContent = `✓ Track loaded — ${RT.fmtDist(res.data.totalDistance)} · ${res.data.paths?.length || 1} path(s)`;
-    document.getElementById('track-file-label').style.color = 'var(--accent2)';
-    if (res.data.paths?.length > 1) showPathSelector(res.data.paths, res.data.pathIndex);
-  }
+async function selectCourse(id) {
+  selectedCourseId = id;
+  renderCourseFileList();
+  const el = document.getElementById('course-detail-inner');
+  el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Loading...</div>';
+  const res = await RT.get(`/api/courses/${id}/parse`);
+  if (!res.ok) { el.innerHTML = `<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Error: ${res.error}</div>`; return; }
+  courseParseData = res.data;
+  renderCourseDetail(el, courseFiles.find(c => c.id === id));
 }
 
-function showPathSelector(paths, selectedIdx) {
-  const el = document.getElementById('path-selector');
-  el.classList.remove('hidden');
-  el.innerHTML = `<label>SELECT PATH TO USE AS COURSE</label>
-    <select onchange="setPathIndex(this.value)">
-      ${paths.map((p, i) => `<option value="${i}"${i===selectedIdx?' selected':''}>${p.name} (${p.pointCount} pts)</option>`).join('')}
-    </select>`;
+function buildCourseSVG(points, w, h) {
+  if (!points || points.length < 2) return `<svg width="${w}" height="${h}"><text x="${w/2}" y="${h/2}" text-anchor="middle" fill="#888" font-size="12">No track data</text></svg>`;
+  const lats = points.map(p => p[0]), lons = points.map(p => p[1]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const pad = 16;
+  const rangeX = maxLon - minLon || 0.0001, rangeY = maxLat - minLat || 0.0001;
+  const scale = Math.min((w - pad*2) / rangeX, (h - pad*2) / rangeY);
+  const drawnW = rangeX * scale, drawnH = rangeY * scale;
+  const offX = pad + (w - pad*2 - drawnW) / 2;
+  const offY = pad + (h - pad*2 - drawnH) / 2;
+  const toX = lon => offX + (lon - minLon) * scale;
+  const toY = lat => h - offY - (lat - minLat) * scale;
+  const d = points.map((p, i) => `${i===0?'M':'L'}${toX(p[1]).toFixed(1)},${toY(p[0]).toFixed(1)}`).join(' ');
+  const sx = toX(points[0][1]).toFixed(1), sy = toY(points[0][0]).toFixed(1);
+  const ex = toX(points[points.length-1][1]).toFixed(1), ey = toY(points[points.length-1][0]).toFixed(1);
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${h}px;display:block;background:var(--surface2);border-radius:6px">
+    <path d="${d}" fill="none" stroke="#f5a623" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${sx}" cy="${sy}" r="5" fill="#3fb950" stroke="#0d1117" stroke-width="1.5"/>
+    <circle cx="${ex}" cy="${ey}" r="5" fill="#f85149" stroke="#0d1117" stroke-width="1.5"/>
+  </svg>`;
 }
 
-async function setPathIndex(idx) {
-  await RT.put(`/api/races/${selectedRaceId}/tracks/path-index`, { index: parseInt(idx) });
+function renderCourseDetail(el, course) {
+  const d = courseParseData;
+  const hasPaths = d.paths?.length > 1;
+  const dist = d.totalDistance ? RT.fmtDist(d.totalDistance) : '—';
+  const svg = buildCourseSVG(d.trackPoints, 520, 200);
+  const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name}</option>`).join('');
+  const wpts = d.points || [];
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:bold;color:var(--text)">${course.name}</div>
+      <div class="text-dim" style="font-size:11px">${dist}${d.trackPoints?` · ${d.trackPoints.length} pts`:''}</div>
+    </div>
+    ${svg}
+    ${hasPaths ? `
+    <div style="margin-top:10px">
+      <label style="font-size:10px;letter-spacing:1px;color:var(--text3)">SELECT PATH</label>
+      <select onchange="setCoursePathIndex(${course.id}, this.value)" style="margin-top:4px">
+        ${d.paths.map(p => `<option value="${p.index}"${p.index===d.pathIndex?' selected':''}>${p.name} (${p.pointCount} pts)</option>`).join('')}
+      </select>
+    </div>` : ''}
+    ${wpts.length ? `
+    <div style="margin-top:12px">
+      <div style="font-size:10px;letter-spacing:1px;color:var(--text3);margin-bottom:6px">WAYPOINTS / POINTS OF INTEREST (${wpts.length})</div>
+      <div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px">
+        ${wpts.map((w, i) => `
+        <div class="infra-row" style="gap:6px">
+          <input type="checkbox" id="wpt-${i}" checked style="flex-shrink:0">
+          <label for="wpt-${i}" style="flex:1;font-size:12px;cursor:pointer">${w.name}</label>
+          <span class="text-dim" style="font-size:10px">${w.lat.toFixed(4)}, ${w.lon.toFixed(4)}</span>
+          <select id="wpt-type-${i}" style="font-size:10px;padding:1px 4px">
+            <option value="aid">AID</option><option value="start">START</option>
+            <option value="finish">FINISH</option><option value="checkpoint">CHECK</option>
+          </select>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <label style="font-size:11px;color:var(--text3)">SEED TO RACE:</label>
+        <select id="seed-race-sel" style="flex:1">${raceOpts}</select>
+        <button class="primary" onclick="seedWaypointsToRace()" style="font-size:10px;padding:4px 10px">SEED STATIONS</button>
+      </div>
+    </div>` : `<div class="text-dim" style="font-size:11px;margin-top:10px">No waypoints/POIs in this file. Use the CSV library to import station coordinates.</div>`}`;
+}
+
+async function setCoursePathIndex(courseId, idx) {
+  await RT.put(`/api/courses/${courseId}`, { path_index: parseInt(idx) });
+  await selectCourse(courseId);
   RT.toast('Course path updated', 'ok');
 }
 
-async function uploadTrack(input) {
+async function uploadCourseFile(input) {
   const file = input.files[0];
   if (!file) return;
   const form = new FormData();
-  form.append('track', file);
-  const res = await fetch(RT.BASE + `api/races/${selectedRaceId}/tracks/upload`, { method: 'POST', body: form });
+  form.append('course', file);
+  const res = await fetch(RT.BASE + 'api/courses/upload', { method: 'POST', body: form });
   const json = await res.json();
   if (json.ok) {
-    RT.toast(`Track uploaded: ${json.data.file}`, 'ok');
-    document.getElementById('track-file-label').textContent = `✓ ${json.data.file}`;
-    if (json.data.paths.length > 1) showPathSelector(json.data.paths, 0);
-  } else RT.toast(json.error, 'warn');
+    RT.toast(`Uploaded: ${file.name}`, 'ok');
+    await loadCourseFiles();
+    selectCourse(json.data.id);
+  } else RT.toast(json.error || 'Upload failed', 'warn');
+  input.value = '';
 }
 
-let stations = [];
+async function renameCourse(id) {
+  const c = courseFiles.find(x => x.id === id);
+  const name = prompt('Rename course:', c?.name || '');
+  if (!name || name === c?.name) return;
+  await RT.put(`/api/courses/${id}`, { name });
+  await loadCourseFiles();
+  if (selectedCourseId === id) await selectCourse(id);
+}
+
+async function deleteCourse(id) {
+  if (!confirm('Delete this course file? Any races using it will lose their course assignment.')) return;
+  await RT.del(`/api/courses/${id}`);
+  if (selectedCourseId === id) {
+    selectedCourseId = null;
+    courseParseData = null;
+    const el = document.getElementById('course-detail-inner');
+    if (el) el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Select a course file to preview</div>';
+  }
+  await loadCourseFiles();
+  RT.toast('Course deleted', 'ok');
+}
+
+async function seedWaypointsToRace() {
+  const raceId = parseInt(document.getElementById('seed-race-sel').value);
+  const wpts = courseParseData?.points || [];
+  const waypoints = wpts
+    .map((w, i) => ({ ...w, type: document.getElementById(`wpt-type-${i}`)?.value || 'aid', checked: document.getElementById(`wpt-${i}`)?.checked }))
+    .filter(w => w.checked);
+  if (!waypoints.length) { RT.toast('No waypoints selected', 'warn'); return; }
+  if (!confirm(`Seed ${waypoints.length} station(s) to ${races.find(r=>r.id===raceId)?.name}? Existing stations are kept.`)) return;
+  const res = await RT.post(`/api/races/${raceId}/stations/seed`, { waypoints });
+  if (res.ok) {
+    RT.toast(`Seeded ${res.data.length} stations`, 'ok');
+    selectedRaceId = raceId;
+    await loadStations();
+  } else RT.toast(res.error, 'warn');
+}
+
+// ── CSV file library ──────────────────────────────────────────────────────────
+async function loadCsvLibFiles() {
+  const res = await RT.get('/api/csv-files');
+  csvFilesList = res.ok ? res.data : [];
+  renderCsvLibList();
+}
+
+function renderCsvLibList() {
+  const el = document.getElementById('csv-lib-list');
+  if (!el) return;
+  if (!csvFilesList.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No CSV files uploaded yet.</div>'; return; }
+  el.innerHTML = csvFilesList.map(f => `
+    <div class="infra-row" style="cursor:pointer;border-radius:4px;${f.id===selectedCsvId?'background:var(--surface3,#161b22);':''}" onclick="selectCsvFile(${f.id})">
+      <span style="flex:1;font-size:12px;color:var(--text)">${f.name}</span>
+      <button style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();renameCsvFile(${f.id})">REN</button>
+      <button class="danger" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();deleteCsvFile(${f.id})">DEL</button>
+    </div>`).join('');
+}
+
+async function selectCsvFile(id) {
+  selectedCsvId = id;
+  renderCsvLibList();
+  const el = document.getElementById('csv-detail-inner');
+  el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Loading...</div>';
+  const res = await RT.get(`/api/csv-files/${id}/preview`);
+  if (!res.ok) { el.innerHTML = `<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Error: ${res.error}</div>`; return; }
+  const { lines, total } = res.data;
+  const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name}</option>`).join('');
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:bold;color:var(--text);margin-bottom:8px">${csvFilesList.find(f=>f.id===id)?.name} <span class="text-dim" style="font-size:11px">(${total} rows)</span></div>
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:4px">
+      <table class="data-table" style="margin:0">
+        <tbody>${lines.map((l, i) => `<tr style="${i===0?'background:var(--surface2)':''}"><td style="font-size:11px;white-space:nowrap">${l.split(',').join('</td><td style="font-size:11px;white-space:nowrap">')}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <label style="font-size:11px;color:var(--text3)">IMPORT TO RACE:</label>
+      <select id="csv-import-race-sel" style="flex:1">${raceOpts}</select>
+      <button class="primary" onclick="importCsvFromLibrary(${id})" style="font-size:10px;padding:4px 10px">IMPORT STATIONS</button>
+    </div>`;
+}
+
+async function uploadCsvFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('csv', file);
+  const res = await fetch(RT.BASE + 'api/csv-files/upload', { method: 'POST', body: form });
+  const json = await res.json();
+  if (json.ok) {
+    RT.toast(`Uploaded: ${file.name}`, 'ok');
+    await loadCsvLibFiles();
+    selectCsvFile(json.data.id);
+  } else RT.toast(json.error || 'Upload failed', 'warn');
+  input.value = '';
+}
+
+async function renameCsvFile(id) {
+  const f = csvFilesList.find(x => x.id === id);
+  const name = prompt('Rename CSV file:', f?.name || '');
+  if (!name || name === f?.name) return;
+  await RT.put(`/api/csv-files/${id}`, { name });
+  await loadCsvLibFiles();
+  if (selectedCsvId === id) await selectCsvFile(id);
+}
+
+async function deleteCsvFile(id) {
+  if (!confirm('Delete this CSV file?')) return;
+  await RT.del(`/api/csv-files/${id}`);
+  if (selectedCsvId === id) {
+    selectedCsvId = null;
+    const el = document.getElementById('csv-detail-inner');
+    if (el) el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Select a CSV file to preview</div>';
+  }
+  await loadCsvLibFiles();
+  RT.toast('CSV file deleted', 'ok');
+}
+
+async function importCsvFromLibrary(fileId) {
+  const raceId = parseInt(document.getElementById('csv-import-race-sel').value);
+  const race = races.find(r => r.id === raceId);
+  if (!confirm(`Import stations from CSV into "${race?.name}"? Existing stations are kept.`)) return;
+  const prevRes = await RT.get(`/api/csv-files/${fileId}/preview`);
+  // We need the full file — read it from the server via the import endpoint
+  // The import endpoint accepts { csv: content } but we stored the file server-side
+  // Use a multipart workaround: fetch the file content via the server
+  const res = await RT.post(`/api/races/${raceId}/stations/import-from-lib`, { csv_file_id: fileId });
+  if (res.ok) {
+    RT.toast(`Imported ${res.data.length} stations`, 'ok');
+    selectedRaceId = raceId;
+    await loadStations();
+  } else RT.toast(res.error, 'warn');
+}
+
+// ── Race stations (inline management) ────────────────────────────────────────
+let stations = [], csvInlineContent = '';
+
 async function loadStations() {
   if (!selectedRaceId) return;
   const res = await RT.get(`/api/races/${selectedRaceId}/stations`);
   stations = res.ok ? res.data : [];
+  renderStationsList();
+}
+
+function renderStationsList() {
   const el = document.getElementById('stations-list');
   if (!el) return;
-  if (!stations.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No stations yet.</div>'; return; }
+  if (!stations.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No stations yet. Seed from a course file above, import a CSV, or add manually.</div>'; return; }
   el.innerHTML = `<table class="data-table"><thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>LAT</th><th>LON</th><th>CUTOFF</th><th></th></tr></thead><tbody>
     ${stations.map((s, i) => `<tr>
       <td class="text-dim">${i + 1}</td>
@@ -496,6 +720,35 @@ async function loadStations() {
       </td>
     </tr>`).join('')}
   </tbody></table>`;
+}
+
+function showInlineCsvImport() {
+  csvInlineContent = '';
+  document.getElementById('inline-csv-label').textContent = '↑ Select CSV file';
+  document.getElementById('inline-csv-btn').disabled = true;
+  document.getElementById('inline-csv-panel').classList.remove('hidden');
+}
+
+function inlineCsvSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    csvInlineContent = e.target.result;
+    document.getElementById('inline-csv-label').textContent = `✓ ${file.name}`;
+    document.getElementById('inline-csv-btn').disabled = false;
+  };
+  reader.readAsText(file);
+}
+
+async function importStationsCsv() {
+  if (!csvInlineContent) return;
+  const res = await RT.post(`/api/races/${selectedRaceId}/stations/import`, { csv: csvInlineContent });
+  if (res.ok) {
+    RT.toast('Stations imported', 'ok');
+    document.getElementById('inline-csv-panel').classList.add('hidden');
+    await loadStations();
+  } else RT.toast(res.error, 'warn');
 }
 
 let editingStationId = null;
@@ -532,7 +785,7 @@ async function deleteStation(id) {
 }
 
 // ── Personnel ─────────────────────────────────────────────────────────────────
-let personnel = [];
+let personnel = [], personnelCsvContent = '';
 function renderPersonnelTab() {
   const opts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name}</option>`).join('');
   return `
@@ -544,22 +797,49 @@ function renderPersonnelTab() {
     <h3>AID STATION PERSONNEL</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="primary" onclick="addPersonnel()">+ ADD PERSON</button>
-      <button onclick="showCsvImport('personnel')">CSV IMPORT</button>
+      <button onclick="showPersonnelCsvPanel()">CSV IMPORT</button>
+    </div>
+    <div id="pers-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">
+      <div class="text-dim" style="font-size:11px;margin-bottom:6px">Columns: name, station_name, tracker_id, phone</div>
+      <div class="upload-zone" onclick="document.getElementById('pers-csv-input').click()" style="padding:8px">
+        <div id="pers-csv-label">&#8593; Select CSV file</div>
+        <input type="file" id="pers-csv-input" accept=".csv" style="display:none" onchange="personnelCsvSelected(this)">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="pers-csv-btn" disabled onclick="importPersonnelCsv()">IMPORT</button>
+        <button onclick="document.getElementById('pers-csv-panel').classList.add('hidden')">CANCEL</button>
+      </div>
     </div>
     <div id="personnel-list"></div>
-  </div>
-  <div id="csv-import-panel" class="hidden card">
-    <h3 id="csv-import-title">CSV IMPORT</h3>
-    <div class="text-dim" id="csv-import-hint" style="font-size:11px;margin-bottom:8px"></div>
-    <div class="upload-zone" onclick="document.getElementById('csv-file-input').click()">
-      <div id="csv-file-label">&#8593; Click to select CSV file</div>
-      <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="csvFileSelected(this)">
-    </div>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="primary" onclick="importCsv()" id="csv-import-btn" disabled>IMPORT</button>
-      <button onclick="document.getElementById('csv-import-panel').classList.add('hidden')">CANCEL</button>
-    </div>
   </div>`;
+}
+
+function showPersonnelCsvPanel() {
+  personnelCsvContent = '';
+  document.getElementById('pers-csv-label').textContent = '↑ Select CSV file';
+  document.getElementById('pers-csv-btn').disabled = true;
+  document.getElementById('pers-csv-panel').classList.remove('hidden');
+}
+
+function personnelCsvSelected(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    personnelCsvContent = e.target.result;
+    document.getElementById('pers-csv-label').textContent = `✓ ${file.name}`;
+    document.getElementById('pers-csv-btn').disabled = false;
+  };
+  reader.readAsText(file);
+}
+
+async function importPersonnelCsv() {
+  if (!personnelCsvContent) return;
+  const res = await RT.post(`/api/races/${selectedRaceId}/personnel/import`, { csv: personnelCsvContent });
+  if (res.ok) {
+    RT.toast('Personnel imported', 'ok');
+    document.getElementById('pers-csv-panel').classList.add('hidden');
+    await loadPersonnel();
+  } else RT.toast(res.error, 'warn');
 }
 
 async function bindPersonnelTab() { await loadPersonnel(); }

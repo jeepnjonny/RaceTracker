@@ -33,9 +33,11 @@ app.get('/view/:token', (req, res) => {
 });
 
 // ── API routes ────────────────────────────────────────────────────────────────
-app.use('/api/auth',   require('./src/routes/auth'));
-app.use('/api/users',  require('./src/routes/users'));
-app.use('/api/races',  require('./src/routes/races'));
+app.use('/api/auth',      require('./src/routes/auth'));
+app.use('/api/users',     require('./src/routes/users'));
+app.use('/api/races',     require('./src/routes/races'));
+app.use('/api/courses',   require('./src/routes/courses'));
+app.use('/api/csv-files', require('./src/routes/csv-files'));
 
 // Race-scoped routes
 const raceRouter = express.Router({ mergeParams: true });

@@ -9,8 +9,21 @@ const wsManager = require('../websocket');
 const router = express.Router({ mergeParams: true });
 
 function getTrackPoints(raceId) {
-  const race = db.prepare('SELECT track_file, track_path_index FROM races WHERE id=?').get(raceId);
-  if (!race || !race.track_file) return null;
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(raceId);
+  if (!race) return null;
+  // Prefer global course library
+  if (race.course_id) {
+    try {
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(race.course_id);
+      if (course) {
+        const raw = fs.readFileSync(course.file_path, 'utf8');
+        const { parseCourse } = require('./courses');
+        const parsed = parseCourse(raw, course.file_path, course.path_index);
+        return parsed.trackPoints || null;
+      }
+    } catch {}
+  }
+  if (!race.track_file) return null;
   try {
     const raw = fs.readFileSync(race.track_file, 'utf8');
     const { parseTrack } = require('./tracks');
@@ -67,6 +80,52 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
   if (!result.changes) return res.status(404).json({ ok: false, error: 'Station not found' });
   wsManager.broadcast({ type: 'station_update', data: { action: 'delete', id: parseInt(req.params.id) } });
   res.json({ ok: true });
+});
+
+// Seed stations from course waypoints
+router.post('/seed', requireRole('admin'), (req, res) => {
+  const { waypoints } = req.body;
+  if (!Array.isArray(waypoints) || waypoints.length === 0)
+    return res.status(400).json({ ok: false, error: 'waypoints array required' });
+  const insert = db.prepare(
+    'INSERT INTO stations (race_id, name, lat, lon, type) VALUES (?,?,?,?,?)'
+  );
+  const tx = db.transaction(() => {
+    for (const w of waypoints) {
+      insert.run(req.params.raceId, w.name, parseFloat(w.lat), parseFloat(w.lon), w.type || 'aid');
+    }
+  });
+  tx();
+  reorderStations(req.params.raceId);
+  const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(req.params.raceId);
+  res.json({ ok: true, data: stations });
+});
+
+// Import stations from a CSV file stored in the csv_files library
+router.post('/import-from-lib', requireRole('admin'), (req, res) => {
+  const { csv_file_id } = req.body;
+  if (!csv_file_id) return res.status(400).json({ ok: false, error: 'csv_file_id required' });
+  const csvFile = db.prepare('SELECT * FROM csv_files WHERE id=?').get(csv_file_id);
+  if (!csvFile) return res.status(404).json({ ok: false, error: 'CSV file not found' });
+  try {
+    const csv = fs.readFileSync(csvFile.file_path, 'utf8');
+    const rows = csvParse(csv, { columns: true, skip_empty_lines: true, trim: true });
+    const insert = db.prepare(
+      'INSERT INTO stations (race_id, name, lat, lon, type, cutoff_time) VALUES (?,?,?,?,?,?)'
+    );
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        insert.run(req.params.raceId, row.name, parseFloat(row.lat), parseFloat(row.lon),
+                   row.type || 'aid', row.cutoff_time || null);
+      }
+    });
+    tx();
+    reorderStations(req.params.raceId);
+    const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(req.params.raceId);
+    res.json({ ok: true, data: stations });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
 });
 
 // CSV import: name, lat, lon, type, cutoff_time

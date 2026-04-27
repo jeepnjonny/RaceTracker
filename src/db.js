@@ -159,6 +159,22 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_race ON events(race_id, timestamp DESC);
 
+CREATE TABLE IF NOT EXISTS courses (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  file_path  TEXT    NOT NULL,
+  file_type  TEXT    NOT NULL CHECK(file_type IN ('kml','gpx')),
+  path_index INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS csv_files (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  file_path  TEXT    NOT NULL,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT
@@ -178,6 +194,9 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_race ON messages(race_id, timestamp DESC);
 `);
+
+// Migrations
+try { db.prepare('ALTER TABLE races ADD COLUMN course_id INTEGER REFERENCES courses(id)').run(); } catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

@@ -9,7 +9,7 @@ const router = express.Router();
 const RACE_FIELDS = [
   'name','date','status','time_format','geofence_radius','off_course_distance',
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
-  'viewer_map_enabled','leaderboard_enabled','weather_enabled',
+  'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id',
 ];
 
 router.get('/', requireAuth, (req, res) => {

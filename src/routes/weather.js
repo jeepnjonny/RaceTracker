@@ -21,8 +21,17 @@ function httpGet(url) {
 }
 
 function getTrackFirstPoint(race) {
-  if (!race.track_file) return null;
   try {
+    if (race.course_id) {
+      const { parseCourse } = require('./courses');
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(race.course_id);
+      if (course) {
+        const text = fs.readFileSync(course.file_path, 'utf8');
+        const { trackPoints } = parseCourse(text, course.file_path, course.path_index);
+        if (trackPoints?.length) return { lat: trackPoints[0][0], lon: trackPoints[0][1] };
+      }
+    }
+    if (!race.track_file) return null;
     const text = fs.readFileSync(race.track_file, 'utf8');
     const points = parseTrack(text, race.track_file, race.track_path_index || 0);
     return points?.length ? { lat: points[0][0], lon: points[0][1] } : null;
