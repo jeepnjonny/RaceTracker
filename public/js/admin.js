@@ -231,8 +231,19 @@ async function saveRace() {
     if (!editingRaceId && res.data?.id) {
       selectedRaceId = res.data.id;
       await loadRaces();
-      showTab('course');
-      RT.toast('Race created — assign a course and seed aid stations below', 'ok');
+      if (_seedingFromCourse) {
+        _seedingFromCourse = false;
+        // Stay on course tab — just refresh the seed dropdown with the new race selected
+        const sel = document.getElementById('seed-race-sel');
+        if (sel) {
+          sel.innerHTML = '<option value="__new__" style="color:var(--accent)">+ NEW RACE…</option>' +
+            races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
+        }
+        RT.toast(`Race "${res.data.name}" created — select SEED STATIONS to continue`, 'ok');
+      } else {
+        showTab('course');
+        RT.toast('Race created — assign a course and seed aid stations below', 'ok');
+      }
     } else {
       RT.toast('Race updated', 'ok');
       await loadRaces(); renderTab();
@@ -545,10 +556,23 @@ function renderCourseDetail(el, course) {
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
         <label style="font-size:11px;color:var(--text3)">SEED TO RACE:</label>
-        <select id="seed-race-sel" style="flex:1">${raceOpts}</select>
+        <select id="seed-race-sel" style="flex:1" onchange="onSeedRaceChange(this)">
+          <option value="__new__" style="color:var(--accent)">+ NEW RACE…</option>
+          ${raceOpts}
+        </select>
         <button class="primary" onclick="seedWaypointsToRace()" style="font-size:10px;padding:4px 10px">SEED STATIONS</button>
       </div>
     </div>` : `<div class="text-dim" style="font-size:11px;margin-top:10px">No waypoints/POIs in this file. Use the CSV library to import station coordinates.</div>`}`;
+}
+
+let _seedingFromCourse = false;
+
+function onSeedRaceChange(sel) {
+  if (sel.value !== '__new__') return;
+  // Reset to first real race (or keep __new__ if none exist)
+  if (races.length) sel.value = String(races[0].id);
+  _seedingFromCourse = true;
+  openRaceModal();
 }
 
 async function autoCreateStartFinish() {
