@@ -131,6 +131,38 @@ const RT = (() => {
     return `<span class="badge" style="background:${c}22;color:${c}">${(status||'--').toUpperCase()}</span>`;
   }
 
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  const THEMES = [
+    { id: 'a', label: 'Dark' },
+    { id: 'b', label: 'High-Vis Dark' },
+    { id: 'c', label: 'High-Vis Day' },
+    { id: 'd', label: 'Amber' },
+  ];
+
+  function applyTheme(id) {
+    if (id && id !== 'a') document.documentElement.setAttribute('data-theme', id);
+    else document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('rt-theme', id || 'a');
+  }
+
+  // Apply immediately to avoid flash
+  applyTheme(localStorage.getItem('rt-theme') || 'a');
+
+  function injectThemeSelector() {
+    const right = document.getElementById('topbar-right');
+    if (!right) return;
+    const saved = localStorage.getItem('rt-theme') || 'a';
+    const sel = document.createElement('select');
+    sel.title = 'Display theme';
+    sel.style.cssText = 'font-size:10px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer';
+    sel.innerHTML = THEMES.map(t => `<option value="${t.id}"${t.id === saved ? ' selected' : ''}>${t.label}</option>`).join('');
+    sel.onchange = () => applyTheme(sel.value);
+    right.prepend(sel);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectThemeSelector);
+  else injectThemeSelector();
+
   // ── Toast notifications ───────────────────────────────────────────────────
   let toastContainer;
   function toast(msg, type = 'info', duration = 4000) {
@@ -139,9 +171,9 @@ const RT = (() => {
       toastContainer.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:6px;';
       document.body.appendChild(toastContainer);
     }
-    const colors = { info: '#58a6ff', ok: '#3fb950', warn: '#f78166', alert: '#f78166' };
+    const colors = { info: 'var(--accent)', ok: 'var(--accent2)', warn: 'var(--accent3)', alert: 'var(--accent3)' };
     const el = document.createElement('div');
-    el.style.cssText = `background:#161b22;border:1px solid ${colors[type]||colors.info};color:${colors[type]||colors.info};padding:8px 14px;border-radius:6px;font-family:'Courier New',monospace;font-size:12px;max-width:320px;`;
+    el.style.cssText = `background:var(--surface);border:1px solid ${colors[type]||colors.info};color:${colors[type]||colors.info};padding:8px 14px;border-radius:6px;font-family:var(--font);font-size:12px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.4);`;
     el.textContent = msg;
     toastContainer.appendChild(el);
     setTimeout(() => el.remove(), duration);
@@ -149,5 +181,5 @@ const RT = (() => {
 
   return { BASE, getMe, logout, requireLogin, api, get, post, put, del, connectWS,
            fmtTime, fmtElapsed, fmtDist, fmtPace, fmtBattery, timeAgo,
-           trackerIcon, SHAPES, statusBadge, toast, STATUS_COLORS };
+           trackerIcon, SHAPES, statusBadge, toast, STATUS_COLORS, applyTheme, THEMES };
 })();
