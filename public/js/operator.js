@@ -22,7 +22,10 @@ const BASE_LAYERS = {
 async function init() {
   const user = await RT.requireLogin('operator');
   if (!user) return;
-  if (user.role === 'admin') document.getElementById('admin-btn').classList.remove('hidden');
+  if (user.role === 'admin') {
+    document.getElementById('admin-btn').classList.remove('hidden');
+    document.getElementById('no-race-admin-btn').classList.remove('hidden');
+  }
   fmt24 = false;
 
   initMap();
@@ -598,9 +601,16 @@ function updateMqttPill(status) {
 
 function updateRacePill(r) {
   const pill = document.getElementById('race-pill');
-  if (!r) { pill.className = 'pill pill-idle'; pill.textContent = 'NO RACE'; return; }
+  const overlay = document.getElementById('no-race-overlay');
+  if (!r) {
+    pill.className = 'pill pill-idle';
+    pill.textContent = 'NO RACE';
+    if (overlay) overlay.style.display = 'flex';
+    return;
+  }
   pill.className = 'pill pill-ok';
   pill.textContent = r.name.toUpperCase();
+  if (overlay) overlay.style.display = 'none';
 }
 
 function checkStationWarnings() {
