@@ -517,6 +517,17 @@ function renderCourseDetail(el, course) {
         ${d.paths.map(p => `<option value="${p.index}"${p.index===d.pathIndex?' selected':''}>${p.name} (${p.pointCount} pts)</option>`).join('')}
       </select>
     </div>` : ''}
+    ${d.trackPoints?.length >= 2 ? (() => {
+      const race = races.find(r => r.id === selectedRaceId);
+      const missingStart  = !stations.some(s => s.type === 'start');
+      const missingFinish = !stations.some(s => s.type === 'finish');
+      if (!missingStart && !missingFinish) return '';
+      const missing = [missingStart && 'START', missingFinish && 'FINISH'].filter(Boolean).join(' + ');
+      return `<div style="background:rgba(210,153,34,.10);border:1px solid rgba(210,153,34,.35);border-radius:4px;padding:7px 10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#d2993a;flex:1">&#9888; No ${missing} station for <strong>${race?.name || 'selected race'}</strong></span>
+        <button onclick="autoCreateStartFinish()" style="font-size:10px;padding:4px 10px;white-space:nowrap">AUTO-CREATE FROM TRACK</button>
+      </div>`;
+    })() : ''}
     ${wpts.length ? `
     <div style="margin-top:12px">
       <div style="font-size:10px;letter-spacing:1px;color:var(--text3);margin-bottom:6px">WAYPOINTS / POINTS OF INTEREST (${wpts.length})</div>
@@ -538,6 +549,25 @@ function renderCourseDetail(el, course) {
         <button class="primary" onclick="seedWaypointsToRace()" style="font-size:10px;padding:4px 10px">SEED STATIONS</button>
       </div>
     </div>` : `<div class="text-dim" style="font-size:11px;margin-top:10px">No waypoints/POIs in this file. Use the CSV library to import station coordinates.</div>`}`;
+}
+
+async function autoCreateStartFinish() {
+  const pts = courseParseData?.trackPoints;
+  if (!pts?.length) return;
+  const missingStart  = !stations.some(s => s.type === 'start');
+  const missingFinish = !stations.some(s => s.type === 'finish');
+  const toCreate = [];
+  if (missingStart)  toCreate.push({ name: 'Start',  type: 'start',  lat: pts[0][0],             lon: pts[0][1] });
+  if (missingFinish) toCreate.push({ name: 'Finish', type: 'finish', lat: pts[pts.length-1][0],  lon: pts[pts.length-1][1] });
+  const race = races.find(r => r.id === selectedRaceId);
+  if (!confirm(`Auto-create ${toCreate.map(s=>s.name).join(' and ')} station(s) for "${race?.name}" at the track start/end coordinates?`)) return;
+  for (const s of toCreate) {
+    await RT.post(`/api/races/${selectedRaceId}/stations`, s);
+  }
+  RT.toast(`Created ${toCreate.map(s=>s.name).join(' + ')} station(s)`, 'ok');
+  await loadStations();
+  // Re-render detail panel to update the warning
+  if (selectedCourseId) await selectCourse(selectedCourseId);
 }
 
 async function setCoursePathIndex(courseId, idx) {
@@ -703,11 +733,21 @@ async function loadStations() {
   renderStationsList();
 }
 
+function stationWarningHtml() {
+  const missing = [];
+  if (!stations.some(s => s.type === 'start'))  missing.push('START');
+  if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
+  if (!missing.length || !stations.length) return '';
+  return `<div style="background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4);border-radius:4px;padding:7px 10px;margin-bottom:8px;font-size:11px;color:#d2993a">
+    &#9888; No <strong>${missing.join(' or ')}</strong> station defined — participants will not auto-transition status via geofence.
+  </div>`;
+}
+
 function renderStationsList() {
   const el = document.getElementById('stations-list');
   if (!el) return;
   if (!stations.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No stations yet. Seed from a course file above, import a CSV, or add manually.</div>'; return; }
-  el.innerHTML = `<table class="data-table"><thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>LAT</th><th>LON</th><th>CUTOFF</th><th></th></tr></thead><tbody>
+  el.innerHTML = stationWarningHtml() + `<table class="data-table"><thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>LAT</th><th>LON</th><th>CUTOFF</th><th></th></tr></thead><tbody>
     ${stations.map((s, i) => `<tr>
       <td class="text-dim">${i + 1}</td>
       <td>${s.name}</td>

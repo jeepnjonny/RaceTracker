@@ -68,6 +68,7 @@ function handleInit(data) {
   renderLeaderboard();
   renderPersonnelRecipients();
   updateStats();
+  checkStationWarnings();
   if (race.viewer_map_enabled || race.leaderboard_enabled) {
     document.getElementById('stat-dist').textContent = '—';
   }
@@ -105,6 +106,7 @@ async function loadInitialData() {
   renderLeaderboard();
   renderPersonnelRecipients();
   updateStats();
+  checkStationWarnings();
   loadTrackData();
 }
 
@@ -575,6 +577,7 @@ function handleStationUpdate(data) {
     stations = stations.filter(s => s.id !== data.id);
   }
   renderStationMarkers();
+  checkStationWarnings();
 }
 
 function handleTrackerInfo(data) {
@@ -600,6 +603,21 @@ function updateRacePill(r) {
   if (!r) { pill.className = 'pill pill-idle'; pill.textContent = 'NO RACE'; return; }
   pill.className = 'pill pill-ok';
   pill.textContent = r.name.toUpperCase();
+}
+
+function checkStationWarnings() {
+  const bar = document.getElementById('setup-warning');
+  const txt = document.getElementById('setup-warning-text');
+  if (!bar || !txt || !race) { if (bar) bar.style.display = 'none'; return; }
+  const missing = [];
+  if (!stations.some(s => s.type === 'start'))  missing.push('START');
+  if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
+  if (missing.length) {
+    txt.textContent = `No ${missing.join(' or ')} station defined — participants will not auto-transition status via geofence.`;
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
 }
 
 function findParticipantByNode(nodeId) {
