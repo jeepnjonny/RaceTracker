@@ -81,8 +81,20 @@ function parseTrack(text, filePath, pathIndex) {
 
 router.get('/parse', requireRole('admin', 'operator'), (req, res) => {
   const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.raceId);
-  if (!race || !race.track_file) return res.json({ ok: true, data: null });
+  if (!race) return res.json({ ok: true, data: null });
   try {
+    // Prefer global course library
+    if (race.course_id) {
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(race.course_id);
+      if (course) {
+        const text = fs.readFileSync(course.file_path, 'utf8');
+        const { parseCourse } = require('./courses');
+        const { paths, points, trackPoints } = parseCourse(text, course.file_path, course.path_index);
+        const meta = trackPoints ? geo.buildTrackMeta(trackPoints) : null;
+        return res.json({ ok: true, data: { paths, points, trackPoints, totalDistance: meta?.total, pathIndex: course.path_index } });
+      }
+    }
+    if (!race.track_file) return res.json({ ok: true, data: null });
     const text = fs.readFileSync(race.track_file, 'utf8');
     const ext = path.extname(race.track_file).toLowerCase();
     const paths = ext === '.gpx' ? parseGPX(text) : parseKML(text).paths;

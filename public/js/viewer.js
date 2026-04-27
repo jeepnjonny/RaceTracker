@@ -54,18 +54,11 @@ function handleInit(data) {
     participants[p.id] = enrichParticipant(p, data.registry || []);
   });
 
-  renderRoute(data.race);
+  if (data.trackPoints?.length) trackPoints = data.trackPoints;
+  renderRoute();
   renderStationMarkers();
   renderAllMarkers();
   renderLeaderboard();
-  loadTrackData();
-}
-
-async function loadTrackData() {
-  if (!race) return;
-  // Viewer fetches track via viewer token — server allows it via WS state
-  // Use the parsed track points already sent in init if available
-  // Fallback: nothing to load without auth
 }
 
 function enrichParticipant(p, registry) {
@@ -76,12 +69,9 @@ function enrichParticipant(p, registry) {
 
 function renderRoute() {
   if (routeLayer) { leafletMap.removeLayer(routeLayer); routeLayer = null; }
-  // Track points sent in init via websocket participants may have last positions; no explicit track here
-  // If we have trackPoints from the session, render
-  if (trackPoints && trackPoints.length >= 2) {
-    routeLayer = L.polyline(trackPoints, { color: '#f5a623', weight: 5, opacity: 0.85 }).addTo(leafletMap);
-    leafletMap.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
-  }
+  if (!trackPoints || trackPoints.length < 2) return;
+  routeLayer = L.polyline(trackPoints, { color: '#f5a623', weight: 5, opacity: 0.85 }).addTo(leafletMap);
+  leafletMap.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
 }
 
 function renderStationMarkers() {

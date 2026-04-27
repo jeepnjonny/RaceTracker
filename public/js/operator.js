@@ -62,6 +62,7 @@ function handleInit(data) {
     participants[p.id] = enrichParticipant(p, data.registry || []);
   });
 
+  if (data.trackPoints?.length) trackPoints = data.trackPoints;
   renderRoute();
   renderStationMarkers();
   renderAllMarkers();
@@ -69,10 +70,7 @@ function handleInit(data) {
   renderPersonnelRecipients();
   updateStats();
   checkStationWarnings();
-  if (race.viewer_map_enabled || race.leaderboard_enabled) {
-    document.getElementById('stat-dist').textContent = '—';
-  }
-  loadTrackData();
+  if (!trackPoints) loadTrackData(); // fallback API fetch if WS didn't include track
 }
 
 async function loadInitialData() {

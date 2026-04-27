@@ -41,6 +41,27 @@ function init(server, sessionMiddleware) {
   return wss;
 }
 
+function getTrackPointsForRace(race) {
+  const fs = require('fs');
+  try {
+    if (race.course_id) {
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(race.course_id);
+      if (course) {
+        const text = fs.readFileSync(course.file_path, 'utf8');
+        const { parseCourse } = require('./routes/courses');
+        const { trackPoints } = parseCourse(text, course.file_path, course.path_index);
+        if (trackPoints?.length) return trackPoints;
+      }
+    }
+    if (race.track_file) {
+      const text = fs.readFileSync(race.track_file, 'utf8');
+      const { parseTrack } = require('./routes/tracks');
+      return parseTrack(text, race.track_file, race.track_path_index) || null;
+    }
+  } catch {}
+  return null;
+}
+
 function sendInit(ws, user) {
   try {
     const activeRace = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
@@ -51,7 +72,7 @@ function sendInit(ws, user) {
 
     const raceId = user.role === 'viewer' ? user.raceId : activeRace.id;
     const race = user.role === 'viewer'
-      ? db.prepare('SELECT id, name, date, status, time_format, viewer_map_enabled, leaderboard_enabled FROM races WHERE id=?').get(raceId)
+      ? db.prepare('SELECT * FROM races WHERE id=?').get(raceId)
       : activeRace;
 
     const participants = db.prepare(`
@@ -71,6 +92,7 @@ function sendInit(ws, user) {
     const classes = db.prepare('SELECT * FROM classes WHERE race_id=?').all(raceId);
     const registry = db.prepare('SELECT * FROM tracker_registry').all();
     const mqttMod = require('./mqtt-client');
+    const trackPoints = getTrackPointsForRace(race);
 
     send(ws, 'init', {
       race,
@@ -79,6 +101,7 @@ function sendInit(ws, user) {
       heats,
       classes,
       registry,
+      trackPoints,
       mqtt: mqttMod.getStatus(),
     });
   } catch (e) {
