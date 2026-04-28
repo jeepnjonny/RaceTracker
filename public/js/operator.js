@@ -305,7 +305,7 @@ function computePercent(p) {
 function computePace(p) {
   if (!p.start_time || !p.last_lat) return null;
   const pct = p._pct;
-  if (!pct || !trackPoints) return null;
+  if (pct == null || !trackPoints) return null;
   const elapsed = Math.floor(Date.now() / 1000) - p.start_time;
   if (elapsed <= 0) return null;
   let totalDist = computeTotalDist();
@@ -549,10 +549,10 @@ function handleEvent(data) {
   appendEventLog(data);
   if (data.participantId && participants[data.participantId]) {
     const p = participants[data.participantId];
-    if (data.event_type === 'start')  p.status = 'active';
-    if (data.event_type === 'finish') p.status = 'finished';
-    if (data.event_type === 'dnf')    p.status = 'dnf';
-    if (data.has_turnaround)          p.has_turnaround = true;
+    if (data.event_type === 'start')  { p.status = 'active';   p.start_time  = data.timestamp; }
+    if (data.event_type === 'finish') { p.status = 'finished'; p.finish_time = data.timestamp; }
+    if (data.event_type === 'dnf')      p.status = 'dnf';
+    if (data.has_turnaround)            p.has_turnaround = true;
     if (data.participantId === selectedPId) showParticipantInfo(data.participantId);
     renderLeaderboard();
   }
