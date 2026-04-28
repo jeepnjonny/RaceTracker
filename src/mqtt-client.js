@@ -412,10 +412,14 @@ function connect(config) {
 
   mqttClient.on('connect', () => {
     console.log(`[mqtt] Connected to ${url}`);
-    const raceTopic = `msh/${config.region}/2/${config.format === 'proto' ? 'e' : 'json'}/${config.channel}/#`;
-    mqttClient.subscribe(raceTopic, err => {
-      if (err) console.error('[mqtt] Subscribe error:', err.message);
-      else console.log(`[mqtt] Subscribed to ${raceTopic}`);
+    // Subscribe to both JSON and encrypted protobuf topic patterns simultaneously
+    const jsonTopic = `msh/${config.region}/2/json/${config.channel}/#`;
+    const encTopic  = `msh/${config.region}/2/e/${config.channel}/#`;
+    [jsonTopic, encTopic].forEach(t => {
+      mqttClient.subscribe(t, err => {
+        if (err) console.error(`[mqtt] Subscribe error ${t}:`, err.message);
+        else console.log(`[mqtt] Subscribed to ${t}`);
+      });
     });
     // Diagnostic catch-all: log every topic for 60s to help identify traffic
     if (config.diagnostic) {
@@ -429,7 +433,7 @@ function connect(config) {
         }
       }, 60000);
     }
-    broadcast('mqtt_status', { connected: true, host: config.host, topic: raceTopic });
+    broadcast('mqtt_status', { connected: true, host: config.host, topics: [jsonTopic, encTopic] });
   });
 
   mqttClient.on('message', async (topic, payload) => {
@@ -438,7 +442,8 @@ function connect(config) {
       console.log(`[mqtt] topic=${topic} len=${payload.length} data=${preview}`);
     }
     try {
-      if (config.format === 'proto') {
+      // Detect format from topic path — /2/e/ = encrypted protobuf, /2/json/ = JSON
+      if (/\/2\/e\//.test(topic)) {
         await handleProtoMessage(payload, config.psk);
       } else {
         const msg = JSON.parse(payload.toString());

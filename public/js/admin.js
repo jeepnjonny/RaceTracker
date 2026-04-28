@@ -1381,17 +1381,16 @@ function renderSettingsTab() {
     </div>
     <div class="form-row">
       <div class="form-group"><label>REGION</label><input id="s-mqtt-region" placeholder="US"></div>
-      <div class="form-group"><label>CHANNEL</label><input id="s-mqtt-channel" placeholder="LongFast"></div>
+      <div class="form-group"><label>CHANNEL</label><input id="s-mqtt-channel" placeholder="RaceTracker"></div>
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>FORMAT</label>
-        <select id="s-mqtt-format">
-          <option value="json">JSON (unencrypted)</option>
-          <option value="proto">Encrypted Protobuf</option>
-        </select>
+        <label>PSK (base64) <span class="text-dim">for encrypted protobuf</span></label>
+        <input id="s-mqtt-psk" placeholder="AQ==">
       </div>
-      <div class="form-group"><label>PSK (base64)</label><input id="s-mqtt-psk" placeholder="AQ=="></div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px">
+      Both JSON (<code>msh/{region}/2/json/{channel}/#</code>) and encrypted protobuf (<code>msh/{region}/2/e/{channel}/#</code>) are subscribed automatically.
     </div>
     <div class="checkbox-row" style="margin-top:6px">
       <input type="checkbox" id="s-mqtt-diagnostic">
@@ -1433,7 +1432,6 @@ async function bindSettingsTab() {
   document.getElementById('s-mqtt-pass').value       = s.mqtt_pass || '';
   document.getElementById('s-mqtt-region').value     = s.mqtt_region || '';
   document.getElementById('s-mqtt-channel').value    = s.mqtt_channel || '';
-  document.getElementById('s-mqtt-format').value     = s.mqtt_format || 'json';
   document.getElementById('s-mqtt-psk').value        = s.mqtt_psk || '';
   document.getElementById('s-mqtt-diagnostic').checked = s.mqtt_diagnostic === '1';
   document.getElementById('settings-weather-key').value = s.weather_api_key || '';
@@ -1448,7 +1446,6 @@ async function saveSettings() {
     mqtt_pass:       document.getElementById('s-mqtt-pass').value || null,
     mqtt_region:     document.getElementById('s-mqtt-region').value.trim() || null,
     mqtt_channel:    document.getElementById('s-mqtt-channel').value.trim() || null,
-    mqtt_format:     document.getElementById('s-mqtt-format').value,
     mqtt_psk:        document.getElementById('s-mqtt-psk').value.trim() || null,
     mqtt_diagnostic: document.getElementById('s-mqtt-diagnostic').checked ? '1' : '0',
     weather_api_key: document.getElementById('settings-weather-key').value.trim() || null,
