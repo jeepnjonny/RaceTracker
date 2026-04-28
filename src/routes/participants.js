@@ -103,50 +103,49 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
 });
 
 // CSV import: bib, name, tracker_id, heat, class, age, phone, emergency_contact
+const stmtUpsertParticipant = db.prepare(`
+  INSERT INTO participants (race_id, bib, name, tracker_id, heat_id, class_id, age, phone, emergency_contact)
+  VALUES (?,?,?,?,?,?,?,?,?)
+  ON CONFLICT(race_id, bib) DO UPDATE SET
+    name=excluded.name, tracker_id=excluded.tracker_id, heat_id=excluded.heat_id,
+    class_id=excluded.class_id, age=excluded.age, phone=excluded.phone,
+    emergency_contact=excluded.emergency_contact
+`);
+const stmtFindHeat  = db.prepare('SELECT id FROM heats WHERE race_id=? AND name=?');
+const stmtFindClass = db.prepare('SELECT id FROM classes WHERE race_id=? AND name=?');
+const stmtAllParticipants = db.prepare('SELECT * FROM participants WHERE race_id=? ORDER BY bib');
+
 router.post('/import', requireRole('admin', 'operator'), (req, res) => {
   const { csv } = req.body;
   if (!csv) return res.status(400).json({ ok: false, error: 'csv body required' });
   try {
-    const rows = csvParse(csv, { columns: true, skip_empty_lines: true, trim: true });
+    const rows = csvParse(csv);
     const raceId = req.params.raceId;
+    console.log(`[import] race=${raceId} rows=${rows.length}`);
     const errors = [];
 
     const tx = db.transaction(() => {
       for (const row of rows) {
         if (!row.bib || !row.name) { errors.push(`Row skipped: bib and name required`); continue; }
-
-        // Resolve heat by name
-        let heatId = null;
-        if (row.heat) {
-          const h = db.prepare('SELECT id FROM heats WHERE race_id=? AND name=?').get(raceId, row.heat.trim());
-          if (h) heatId = h.id;
-        }
-        // Resolve class by name
-        let classId = null;
-        if (row.class) {
-          const c = db.prepare('SELECT id FROM classes WHERE race_id=? AND name=?').get(raceId, row.class.trim());
-          if (c) classId = c.id;
-        }
+        const heatId  = row.heat  ? (stmtFindHeat.get(raceId, row.heat.trim())?.id  ?? null) : null;
+        const classId = row.class ? (stmtFindClass.get(raceId, row.class.trim())?.id ?? null) : null;
         try {
-          db.prepare(`
-            INSERT INTO participants (race_id, bib, name, tracker_id, heat_id, class_id, age, phone, emergency_contact)
-            VALUES (?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(race_id, bib) DO UPDATE SET
-              name=excluded.name, tracker_id=excluded.tracker_id, heat_id=excluded.heat_id,
-              class_id=excluded.class_id, age=excluded.age, phone=excluded.phone,
-              emergency_contact=excluded.emergency_contact
-          `).run(raceId, String(row.bib), row.name,
-                 row.tracker_id || null, heatId, classId,
-                 row.age ? parseInt(row.age) : null,
-                 row.phone || null, row.emergency_contact || null);
+          stmtUpsertParticipant.run(
+            raceId, String(row.bib), row.name,
+            row.tracker_id || null, heatId, classId,
+            row.age ? parseInt(row.age) : null,
+            row.phone || null, row.emergency_contact || null
+          );
         } catch (e) { errors.push(`Bib ${row.bib}: ${e.message}`); }
       }
     });
     tx();
 
-    const participants = db.prepare('SELECT * FROM participants WHERE race_id=? ORDER BY bib').all(raceId);
+    const participants = stmtAllParticipants.all(raceId);
+    console.log(`[import] done — ${participants.length} total, ${errors.length} errors`);
     res.json({ ok: true, data: participants, errors });
   } catch (e) {
+    console.error('[import] error:', e);
     res.status(400).json({ ok: false, error: e.message });
   }
 });
