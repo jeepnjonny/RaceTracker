@@ -171,11 +171,18 @@ function findParticipant(nodeId, raceId) {
 const recentGeofenceEvents = new Map(); // key: `${participantId}_${stationId}_arrive/depart`
 
 function checkGeofences(participant, race, lat, lon, timestamp) {
-  if (!race.feat_auto_log && !race.feat_auto_start) return;
+  if (!race.feat_auto_log && !race.feat_auto_start) {
+    console.log(`[geo] skipped — feat_auto_log=${race.feat_auto_log} feat_auto_start=${race.feat_auto_start}`);
+    return;
+  }
   const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(race.id);
+  if (!stations.length) { console.log(`[geo] no stations for race ${race.id}`); return; }
 
   for (const station of stations) {
-    const inside = geo.inGeofence(lat, lon, station.lat, station.lon, race.geofence_radius);
+    if (!station.lat || !station.lon) continue;
+    const dist = geo.haversine(lat, lon, station.lat, station.lon);
+    const inside = dist <= race.geofence_radius;
+    console.log(`[geo] p=${participant.name}(${participant.status}) stn=${station.name}(${station.type}) dist=${Math.round(dist)}m radius=${race.geofence_radius}m inside=${inside}`);
     const arriveKey = `${participant.id}_${station.id}_arrive`;
     const departKey = `${participant.id}_${station.id}_depart`;
 
