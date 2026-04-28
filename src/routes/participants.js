@@ -1,7 +1,35 @@
 'use strict';
 const express = require('express');
-const { parse: csvParse } = require('csv-parse/sync');
 const db = require('../db');
+
+function csvParse(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+  const parseRow = line => {
+    const cols = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') inQ = false;
+        else cur += ch;
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { cols.push(cur); cur = ''; }
+        else cur += ch;
+      }
+    }
+    cols.push(cur);
+    return cols;
+  };
+  const headers = parseRow(lines[0]).map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = parseRow(line);
+    const row = {};
+    headers.forEach((h, i) => { row[h] = (vals[i] ?? '').trim(); });
+    return row;
+  });
+}
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
 const router = express.Router({ mergeParams: true });
