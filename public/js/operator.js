@@ -50,12 +50,21 @@ function handleWS(msg) {
   else if (type === 'tracker_info') handleTrackerInfo(data);
 }
 
+function applyMessagingFlag() {
+  const btn = document.querySelector('#right-panel .tab-btn[onclick*="\'msg\'"]');
+  if (!btn) return;
+  const enabled = race?.messaging_enabled;
+  btn.style.display = enabled ? '' : 'none';
+  if (!enabled && rightTab === 'msg') switchRightTab('info');
+}
+
 function handleInit(data) {
   if (!data.race) { updateRacePill(null); return; }
   race = data.race;
   fmt24 = race.time_format === '24h';
   updateRacePill(race);
   updateMqttPill(data.mqtt);
+  applyMessagingFlag();
 
   heats = {}; (data.heats || []).forEach(h => heats[h.id] = h);
   classes = {}; (data.classes || []).forEach(c => classes[c.id] = c);
@@ -83,6 +92,7 @@ async function loadInitialData() {
   race = res.data;
   fmt24 = race.time_format === '24h';
   updateRacePill(race);
+  applyMessagingFlag();
 
   const [pr, sr, hr, cr, personnelR, msgR] = await Promise.all([
     RT.get(`/api/races/${race.id}/participants`),

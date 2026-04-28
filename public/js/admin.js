@@ -913,13 +913,15 @@ function renderParticipantsTab() {
     </div>
     <div id="pt-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:10px">
       <div style="font-size:11px;color:var(--text3);margin-bottom:6px">
-        CSV columns: <code>bib, name, tracker_id, heat, class, age, phone, emergency_contact</code><br>
+        <span style="color:var(--accent3)">Required columns:</span> <code>bib, name, tracker_id</code><br>
+        <span style="color:var(--text3)">Optional columns:</span> <code>heat, class, age, phone, emergency_contact</code><br>
         First row must be a header. Heat/class matched by name. Duplicate bibs are updated.
       </div>
       <div class="upload-zone" onclick="document.getElementById('pt-csv-input').click()" id="pt-csv-zone">
         <span id="pt-csv-label" style="font-size:11px">&#8593; Select CSV file</span>
         <input type="file" id="pt-csv-input" accept=".csv" style="display:none" onchange="ptCsvSelected(this)">
       </div>
+      <div id="pt-csv-error" style="font-size:11px;color:var(--accent3);margin-top:6px;display:none"></div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="primary" id="pt-csv-btn" onclick="importParticipantsCsv()" disabled>IMPORT</button>
         <button onclick="togglePtCsvPanel()">CANCEL</button>
@@ -1058,19 +1060,56 @@ async function clearAllParticipants() {
 
 function togglePtCsvPanel() {
   participantsCsvContent = '';
+  const panel = document.getElementById('pt-csv-panel');
+  if (!panel) return;
   document.getElementById('pt-csv-label').textContent = '↑ Select CSV file';
   document.getElementById('pt-csv-btn').disabled = true;
-  document.getElementById('pt-csv-panel').classList.toggle('hidden');
+  const errEl = document.getElementById('pt-csv-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  panel.classList.toggle('hidden');
 }
 
 function ptCsvSelected(input) {
   const file = input.files[0];
+  const errEl = document.getElementById('pt-csv-error');
+  const btn   = document.getElementById('pt-csv-btn');
+  const label = document.getElementById('pt-csv-label');
+
+  function showError(msg) {
+    participantsCsvContent = '';
+    btn.disabled = true;
+    label.textContent = '↑ Select CSV file';
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  }
+
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    participantsCsvContent = e.target.result;
-    document.getElementById('pt-csv-label').textContent = `✓ ${file.name}`;
-    document.getElementById('pt-csv-btn').disabled = false;
+    const text = e.target.result;
+    const firstLine = text.split(/\r?\n/)[0] || '';
+    const normalize = s => s.toLowerCase().replace(/[\s_\-"']+/g, '');
+    const headers = firstLine.split(',').map(h => normalize(h.trim()));
+
+    const REQUIRED = [
+      { label: 'bib',        match: h => h === 'bib' },
+      { label: 'name',       match: h => h === 'name' },
+      { label: 'tracker_id', match: h => h === 'trackerid' || h === 'tracker' },
+    ];
+
+    const missing = REQUIRED.filter(r => !headers.some(r.match)).map(r => r.label);
+
+    if (missing.length) {
+      const found = firstLine.split(',').map(h => h.trim()).join(', ') || '(empty)';
+      showError(`Missing required column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}. Found: ${found}`);
+      return;
+    }
+
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+    participantsCsvContent = text;
+    label.textContent = `✓ ${file.name}`;
+    btn.disabled = false;
   };
   reader.readAsText(file);
 }
