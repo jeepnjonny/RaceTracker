@@ -109,7 +109,7 @@ function sendInit(ws, user) {
       weatherKey: (user.role !== 'viewer' || race.weather_enabled) ? (wxRow?.value || null) : null,
     });
   } catch (e) {
-    console.error('[ws] sendInit error:', e.message);
+    require('./logger').log('system', 'error', `WebSocket sendInit error: ${e.message}`);
   }
 }
 

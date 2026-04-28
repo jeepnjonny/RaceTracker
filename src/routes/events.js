@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
+const logger = require('../logger');
 const router = express.Router({ mergeParams: true });
 
 router.get('/', requireAuth, (req, res) => {
@@ -60,6 +61,9 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
   `).get(result.lastInsertRowid);
 
   wsManager.broadcast({ type: 'event', data: event });
+  const who = event.participant_name ? `#${event.bib} ${event.participant_name}` : '(no participant)';
+  const where = event.station_name ? ` @ ${event.station_name}` : '';
+  logger.log('race', 'info', `MANUAL ${event_type.toUpperCase()} — ${who}${where} by ${req.session.user.username}`);
   res.json({ ok: true, data: event });
 });
 

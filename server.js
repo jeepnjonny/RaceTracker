@@ -10,6 +10,13 @@ const mqttClient = require('./src/mqtt-client');
 const logger = require('./src/logger');
 const aprsClient = require('./src/aprs-client');
 const PORT = process.env.PORT || 3000;
+
+// Pipe all console output to the UI logs tab (console channel)
+const _fmtArg = x => typeof x === 'string' ? x : x instanceof Error ? x.message : (() => { try { return JSON.stringify(x); } catch { return String(x); } })();
+const _cLog = console.log.bind(console), _cWarn = console.warn.bind(console), _cErr = console.error.bind(console);
+console.log   = (...a) => { _cLog(...a);  logger.log('console', 'info',  a.map(_fmtArg).join(' ')); };
+console.warn  = (...a) => { _cWarn(...a); logger.log('console', 'warn',  a.map(_fmtArg).join(' ')); };
+console.error = (...a) => { _cErr(...a);  logger.log('console', 'error', a.map(_fmtArg).join(' ')); };
 const SESSION_SECRET = process.env.SESSION_SECRET || 'racetracker-secret-' + Math.random().toString(36);
 
 const app = express();
@@ -108,6 +115,8 @@ app.put('/api/settings', (req, res) => {
   const upsert = db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
   const tx = db.transaction(entries => { for (const [k, v] of entries) upsert.run(k, v ?? null); });
   tx(Object.entries(req.body));
+  const keys = Object.keys(req.body).join(', ');
+  logger.log('system', 'info', `Settings saved by ${req.session.user.username}: ${keys}`);
   res.json({ ok: true });
 });
 
@@ -131,6 +140,7 @@ app.delete('/api/trackers', (req, res) => {
   if (!hours || hours <= 0) return res.status(400).json({ ok: false, error: 'olderThan must be > 0' });
   const cutoff = Math.floor(Date.now() / 1000) - Math.round(hours * 3600);
   const info = db.prepare('DELETE FROM tracker_registry WHERE last_seen < ? OR last_seen IS NULL').run(cutoff);
+  logger.log('system', 'info', `Purged ${info.changes} tracker node(s) older than ${hours}h`);
   res.json({ ok: true, deleted: info.changes });
 });
 
@@ -225,4 +235,5 @@ else console.log('[server] APRS-IS not configured');
 
 server.listen(PORT, () => {
   console.log(`[server] RaceTracker listening on port ${PORT}`);
+  logger.log('system', 'info', `RaceTracker started on port ${PORT}`);
 });

@@ -33,6 +33,7 @@ function csvParse(text) {
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
 const aprsClient = require('../aprs-client');
+const logger = require('../logger');
 const router = express.Router({ mergeParams: true });
 
 const stmtHeat    = db.prepare('SELECT name, color, shape FROM heats WHERE id=?');
@@ -82,6 +83,7 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
     const p = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(result.lastInsertRowid));
     wsManager.broadcast({ type: 'participant_update', data: { action: 'add', participant: p } });
     aprsClient.notifyRosterChange();
+    logger.log('race', 'info', `Participant added — #${bib} ${name}`);
     res.json({ ok: true, data: p });
   } catch (e) {
     res.status(409).json({ ok: false, error: 'Bib number already exists in this race' });
@@ -104,6 +106,8 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
   const updated = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(p.id));
   wsManager.broadcast({ type: 'participant_update', data: { action: 'update', participant: updated } });
   aprsClient.notifyRosterChange();
+  if (updates.status && updates.status !== p.status)
+    logger.log('race', 'info', `Status change — #${updated.bib} ${updated.name}: ${p.status} → ${updates.status}`);
   res.json({ ok: true, data: updated });
 });
 
@@ -118,11 +122,11 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
 router.delete('/', requireRole('admin'), (req, res) => {
   try {
     const result = db.prepare('DELETE FROM participants WHERE race_id=?').run(req.params.raceId);
-    console.log(`[participants] bulk delete race=${req.params.raceId} removed=${result.changes}`);
+    logger.log('race', 'warn', `All participants deleted — race ${req.params.raceId} (${result.changes} removed)`);
     wsManager.broadcast({ type: 'participant_update', data: { action: 'clear', raceId: req.params.raceId } });
     res.json({ ok: true, deleted: result.changes });
   } catch (e) {
-    console.error('[participants] bulk delete error:', e);
+    logger.log('race', 'error', `Bulk delete failed: ${e.message}`);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -146,7 +150,6 @@ router.post('/import', requireRole('admin', 'operator'), (req, res) => {
   try {
     const rows = csvParse(csv);
     const raceId = req.params.raceId;
-    console.log(`[import] race=${raceId} rows=${rows.length}`);
     const errors = [];
 
     const tx = db.transaction(() => {
@@ -167,10 +170,11 @@ router.post('/import', requireRole('admin', 'operator'), (req, res) => {
     tx();
 
     const participants = stmtAllParticipants.all(raceId);
-    console.log(`[import] done — ${participants.length} total, ${errors.length} errors`);
+    logger.log('race', errors.length ? 'warn' : 'info',
+      `CSV import — ${rows.length} rows → ${participants.length} participants${errors.length ? `, ${errors.length} error(s)` : ''}`);
     res.json({ ok: true, data: participants, errors });
   } catch (e) {
-    console.error('[import] error:', e);
+    logger.log('race', 'error', `CSV import failed: ${e.message}`);
     res.status(400).json({ ok: false, error: e.message });
   }
 });

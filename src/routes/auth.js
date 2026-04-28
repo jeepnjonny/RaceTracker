@@ -2,6 +2,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const db = require('../db');
+const logger = require('../logger');
 const router = express.Router();
 
 router.post('/login', async (req, res) => {
@@ -10,17 +11,28 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Username and password required' });
 
   const user = db.prepare('SELECT * FROM users WHERE username=?').get(username);
-  if (!user) return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+  if (!user) {
+    logger.log('system', 'warn', `Login failed — unknown user "${username}"`);
+    return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+  }
 
   const match = await bcrypt.compare(password, user.password_hash);
-  if (!match) return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+  if (!match) {
+    logger.log('system', 'warn', `Login failed — invalid password for "${username}"`);
+    return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+  }
 
   req.session.user = { id: user.id, username: user.username, role: user.role };
+  logger.log('system', 'info', `Login — ${user.username} (${user.role})`);
   res.json({ ok: true, data: { id: user.id, username: user.username, role: user.role } });
 });
 
 router.post('/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+  const who = req.session?.user?.username;
+  req.session.destroy(() => {
+    if (who) logger.log('system', 'info', `Logout — ${who}`);
+    res.json({ ok: true });
+  });
 });
 
 router.get('/me', (req, res) => {

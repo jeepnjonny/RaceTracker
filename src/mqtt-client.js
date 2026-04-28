@@ -172,12 +172,9 @@ function findParticipant(nodeId, raceId) {
 const recentGeofenceEvents = new Map(); // key: `${participantId}_${stationId}_arrive/depart`
 
 function checkGeofences(participant, race, lat, lon, timestamp) {
-  if (!race.feat_auto_log && !race.feat_auto_start) {
-    console.log(`[geo] skipped — feat_auto_log=${race.feat_auto_log} feat_auto_start=${race.feat_auto_start}`);
-    return;
-  }
+  if (!race.feat_auto_log && !race.feat_auto_start) return;
   const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(race.id);
-  if (!stations.length) { console.log(`[geo] no stations for race ${race.id}`); return; }
+  if (!stations.length) return;
 
   for (const station of stations) {
     if (!station.lat || !station.lon) continue;
@@ -186,7 +183,6 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       ? (race.geofence_radius || 15)
       : (race.checkpoint_radius || 50);
     const inside = dist <= radius;
-    console.log(`[geo] p=${participant.name}(${participant.status}) stn=${station.name}(${station.type}) dist=${Math.round(dist)}m radius=${radius}m inside=${inside}`);
     const arriveKey = `${participant.id}_${station.id}_arrive`;
     const departKey = `${participant.id}_${station.id}_depart`;
 
@@ -250,7 +246,6 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
         db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
           .run(race.id, participant.id, 'start', station.id, timestamp);
         db.prepare("UPDATE participants SET status='active', start_time=? WHERE id=?").run(timestamp, participant.id);
-        console.log(`[geo] START fired on depart: p=${participant.name} ts=${timestamp}`);
         logger.log('race', 'info', `START — ${participant.name} (#${participant.bib}) departed ${station.name}`);
         broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'start', stationId: station.id, timestamp, has_turnaround: false });
       } else if (!['start', 'finish', 'start_finish'].includes(station.type)) {
