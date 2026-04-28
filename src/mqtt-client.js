@@ -380,15 +380,19 @@ function connectFromSettings(db) {
   const rows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'mqtt_%'").all();
   const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
   if (!s.mqtt_host) return false;
+  const protocol = s.mqtt_protocol || 'tcp';
+  const defaultPort = protocol === 'ws' ? 9001 : 1883;
   connect({
     host: s.mqtt_host,
-    portWs: parseInt(s.mqtt_port_ws) || 9001,
+    port: parseInt(s.mqtt_port || s.mqtt_port_ws) || defaultPort,
+    protocol,
     user: s.mqtt_user || '',
     pass: s.mqtt_pass || '',
     region: s.mqtt_region || 'US',
     channel: s.mqtt_channel || 'LongFast',
     format: s.mqtt_format || 'json',
     psk: s.mqtt_psk || 'AQ==',
+    diagnostic: s.mqtt_diagnostic === '1',
   });
   return true;
 }
@@ -396,25 +400,43 @@ function connectFromSettings(db) {
 function connect(config) {
   disconnect();
   currentConfig = config;
-  const url = `ws://${config.host}:${config.portWs}`;
+  const proto = config.protocol === 'ws' ? 'ws' : 'mqtt';
+  const url = `${proto}://${config.host}:${config.port}`;
   const opts = {
-    username: config.user,
-    password: config.pass,
+    username: config.user || undefined,
+    password: config.pass || undefined,
     reconnectPeriod: 5000,
   };
+  console.log(`[mqtt] Connecting to ${url} as ${config.user || '(anonymous)'}`);
   mqttClient = mqtt.connect(url, opts);
 
   mqttClient.on('connect', () => {
     console.log(`[mqtt] Connected to ${url}`);
-    const topic = `msh/${config.region}/2/${config.format === 'proto' ? 'e' : 'json'}/${config.channel}/#`;
-    mqttClient.subscribe(topic, err => {
+    const raceTopic = `msh/${config.region}/2/${config.format === 'proto' ? 'e' : 'json'}/${config.channel}/#`;
+    mqttClient.subscribe(raceTopic, err => {
       if (err) console.error('[mqtt] Subscribe error:', err.message);
-      else console.log(`[mqtt] Subscribed to ${topic}`);
+      else console.log(`[mqtt] Subscribed to ${raceTopic}`);
     });
-    broadcast('mqtt_status', { connected: true, host: config.host, topic });
+    // Diagnostic catch-all: log every topic for 60s to help identify traffic
+    if (config.diagnostic) {
+      mqttClient.subscribe('#', err => {
+        if (!err) console.log('[mqtt] Diagnostic: subscribed to # (all topics for 60s)');
+      });
+      setTimeout(() => {
+        if (mqttClient?.connected) {
+          mqttClient.unsubscribe('#');
+          console.log('[mqtt] Diagnostic: unsubscribed from #');
+        }
+      }, 60000);
+    }
+    broadcast('mqtt_status', { connected: true, host: config.host, topic: raceTopic });
   });
 
   mqttClient.on('message', async (topic, payload) => {
+    if (config.diagnostic) {
+      const preview = payload.slice(0, 120).toString('utf8').replace(/[^\x20-\x7e]/g, '.');
+      console.log(`[mqtt] topic=${topic} len=${payload.length} data=${preview}`);
+    }
     try {
       if (config.format === 'proto') {
         await handleProtoMessage(payload, config.psk);
@@ -424,7 +446,7 @@ function connect(config) {
       }
       broadcast('mqtt_raw', { topic, ts: Date.now() });
     } catch (e) {
-      // ignore parse errors
+      if (config.diagnostic) console.warn(`[mqtt] Parse error on ${topic}: ${e.message}`);
     }
   });
 

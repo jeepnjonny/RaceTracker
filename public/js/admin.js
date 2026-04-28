@@ -1366,7 +1366,14 @@ function renderSettingsTab() {
     <h3>MQTT / DATA SOURCE</h3>
     <div class="form-row">
       <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
-      <div class="form-group"><label>PORT</label><input id="s-mqtt-port-ws" type="number" value="9001"></div>
+      <div class="form-group">
+        <label>PROTOCOL</label>
+        <select id="s-mqtt-protocol" onchange="updateMqttPortDefault()">
+          <option value="tcp">TCP (mqtt://)</option>
+          <option value="ws">WebSocket (ws://)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>PORT</label><input id="s-mqtt-port" type="number" value="1883"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>USERNAME</label><input id="s-mqtt-user" placeholder="racetracker"></div>
@@ -1386,6 +1393,10 @@ function renderSettingsTab() {
       </div>
       <div class="form-group"><label>PSK (base64)</label><input id="s-mqtt-psk" placeholder="AQ=="></div>
     </div>
+    <div class="checkbox-row" style="margin-top:6px">
+      <input type="checkbox" id="s-mqtt-diagnostic">
+      <label for="s-mqtt-diagnostic">Diagnostic mode — log all topics to server console for 60s on connect</label>
+    </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="primary" onclick="saveSettings()">SAVE</button>
       <button onclick="testMqtt()" id="s-mqtt-test-btn">TEST CONNECTION</button>
@@ -1402,31 +1413,44 @@ function renderSettingsTab() {
   </div>`;
 }
 
+function updateMqttPortDefault() {
+  const proto = document.getElementById('s-mqtt-protocol')?.value;
+  const portEl = document.getElementById('s-mqtt-port');
+  if (!portEl) return;
+  const cur = parseInt(portEl.value);
+  if (proto === 'ws' && (cur === 1883 || !cur)) portEl.value = '9001';
+  else if (proto === 'tcp' && (cur === 9001 || !cur)) portEl.value = '1883';
+}
+
 async function bindSettingsTab() {
   const res = await RT.get('/api/settings');
   if (!res.ok) return;
   const s = res.data;
   document.getElementById('s-mqtt-host').value       = s.mqtt_host || '';
-  document.getElementById('s-mqtt-port-ws').value    = s.mqtt_port_ws || '9001';
+  document.getElementById('s-mqtt-protocol').value   = s.mqtt_protocol || 'tcp';
+  document.getElementById('s-mqtt-port').value       = s.mqtt_port || s.mqtt_port_ws || (s.mqtt_protocol === 'ws' ? '9001' : '1883');
   document.getElementById('s-mqtt-user').value       = s.mqtt_user || '';
   document.getElementById('s-mqtt-pass').value       = s.mqtt_pass || '';
   document.getElementById('s-mqtt-region').value     = s.mqtt_region || '';
   document.getElementById('s-mqtt-channel').value    = s.mqtt_channel || '';
   document.getElementById('s-mqtt-format').value     = s.mqtt_format || 'json';
   document.getElementById('s-mqtt-psk').value        = s.mqtt_psk || '';
+  document.getElementById('s-mqtt-diagnostic').checked = s.mqtt_diagnostic === '1';
   document.getElementById('settings-weather-key').value = s.weather_api_key || '';
 }
 
 async function saveSettings() {
   const res = await RT.put('/api/settings', {
-    mqtt_host:      document.getElementById('s-mqtt-host').value.trim() || null,
-    mqtt_port_ws:   document.getElementById('s-mqtt-port-ws').value || '9001',
-    mqtt_user:      document.getElementById('s-mqtt-user').value.trim() || null,
-    mqtt_pass:      document.getElementById('s-mqtt-pass').value || null,
-    mqtt_region:    document.getElementById('s-mqtt-region').value.trim() || null,
-    mqtt_channel:   document.getElementById('s-mqtt-channel').value.trim() || null,
-    mqtt_format:    document.getElementById('s-mqtt-format').value,
-    mqtt_psk:       document.getElementById('s-mqtt-psk').value.trim() || null,
+    mqtt_host:       document.getElementById('s-mqtt-host').value.trim() || null,
+    mqtt_protocol:   document.getElementById('s-mqtt-protocol').value,
+    mqtt_port:       document.getElementById('s-mqtt-port').value || '1883',
+    mqtt_user:       document.getElementById('s-mqtt-user').value.trim() || null,
+    mqtt_pass:       document.getElementById('s-mqtt-pass').value || null,
+    mqtt_region:     document.getElementById('s-mqtt-region').value.trim() || null,
+    mqtt_channel:    document.getElementById('s-mqtt-channel').value.trim() || null,
+    mqtt_format:     document.getElementById('s-mqtt-format').value,
+    mqtt_psk:        document.getElementById('s-mqtt-psk').value.trim() || null,
+    mqtt_diagnostic: document.getElementById('s-mqtt-diagnostic').checked ? '1' : '0',
     weather_api_key: document.getElementById('settings-weather-key').value.trim() || null,
   });
   if (res.ok) RT.toast('Settings saved', 'ok');
