@@ -1286,7 +1286,12 @@ async function clearAllPersonnel() {
 function renderInfraTab() {
   return `
   <div class="card">
-    <h3>TRACKER REGISTRY <span class="text-dim">(all nodes seen via MQTT)</span></h3>
+    <h3>TRACKER REGISTRY <span class="text-dim">(all nodes seen via MQTT or APRS)</span></h3>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <button onclick="purgeTrackers()" style="font-size:11px;padding:4px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--accent3);border-radius:4px;cursor:pointer">PURGE OLDER THAN</button>
+      <input id="purge-hours" type="number" min="1" value="24" style="width:56px;text-align:right">
+      <span style="font-size:11px;color:var(--text3)">hours</span>
+    </div>
     <div id="infra-list"><div class="text-dim" style="font-size:12px;padding:6px">Loading...</div></div>
   </div>`;
 }
@@ -1313,6 +1318,19 @@ async function refreshInfra() {
       </tr>`;
     }).join('')}
   </tbody></table>`;
+}
+
+async function purgeTrackers() {
+  const hours = parseFloat(document.getElementById('purge-hours')?.value);
+  if (!hours || hours <= 0) { RT.toast('Enter a valid number of hours', 'warn'); return; }
+  if (!confirm(`Delete all tracker nodes last seen more than ${hours} hour(s) ago?`)) return;
+  const res = await RT.del(`/api/trackers?olderThan=${hours}`);
+  if (res.ok) {
+    RT.toast(`Purged ${res.deleted} node(s)`, 'ok');
+    refreshInfra();
+  } else {
+    RT.toast(res.error || 'Purge failed', 'warn');
+  }
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -1467,7 +1485,11 @@ function renderSettingsTab() {
       <label>API KEY</label>
       <input id="settings-weather-key" placeholder="Paste OpenWeather API key here">
     </div>
-    <button class="primary" onclick="saveWeatherSettings()" style="margin-top:6px">SAVE</button>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <button class="primary" onclick="saveWeatherSettings()">SAVE</button>
+      <button onclick="testWeather()" id="s-weather-test-btn">TEST KEY</button>
+      <span id="s-weather-status" style="font-size:11px;color:var(--text3)"></span>
+    </div>
   </div>`;
 }
 
@@ -1481,7 +1503,7 @@ function updateMqttPortDefault() {
 }
 
 async function bindSettingsTab() {
-  const [sRes, aprsRes] = await Promise.all([RT.get('/api/settings'), RT.get('/api/aprs/status')]);
+  const [sRes, aprsRes, wxRes] = await Promise.all([RT.get('/api/settings'), RT.get('/api/aprs/status'), RT.get('/api/weather/status')]);
   if (!sRes.ok) return;
   const s = sRes.data;
 
@@ -1507,6 +1529,7 @@ async function bindSettingsTab() {
   document.getElementById('settings-weather-key').value = s.weather_api_key || '';
 
   if (aprsRes.ok) updateAprsPill(aprsRes.data);
+  if (wxRes.ok) updateWeatherPill(wxRes.data);
   await updateAprsFilterPreview();
 }
 
@@ -1579,6 +1602,38 @@ function updateAprsPill(status) {
     pill.className = 'pill pill-error';
   } else {
     pill.className = 'pill pill-idle';
+  }
+}
+
+function updateWeatherPill(status) {
+  const pill = document.getElementById('weather-pill');
+  if (!pill) return;
+  if (status.ok) {
+    pill.className = 'pill pill-ok pill-pulse';
+  } else if (status.configured) {
+    pill.className = 'pill pill-error';
+  } else {
+    pill.className = 'pill pill-idle';
+  }
+}
+
+async function testWeather() {
+  const btn = document.getElementById('s-weather-test-btn');
+  const span = document.getElementById('s-weather-status');
+  btn.disabled = true;
+  span.textContent = 'Testing…';
+  span.style.color = 'var(--text3)';
+  await saveWeatherSettings();
+  const res = await RT.post('/api/weather/test', {});
+  btn.disabled = false;
+  if (res.ok) {
+    span.textContent = '✓ API key valid';
+    span.style.color = 'var(--accent2)';
+    updateWeatherPill({ configured: true, ok: true });
+  } else {
+    span.textContent = `✗ ${res.error || 'Invalid key'}`;
+    span.style.color = 'var(--accent3)';
+    updateWeatherPill({ configured: true, ok: false });
   }
 }
 

@@ -1,15 +1,17 @@
 'use strict';
 const VW = (() => {
 let race = null, participants = {}, stations = [], heats = {}, trackPoints = null;
-let leafletMap, markerLayer, routeLayer, currentBaseLayer, stationMarkers = {};
+let leafletMap, markerLayer, routeLayer, stationMarkers = {};
 let sortBy = 'position', clockInterval;
 let fmt24 = false;
 let mapMode = true; // vs leaderboard on mobile
+let viewerLayersControl = null, viewerBaseTiles = null;
 
 const BASE_LAYERS = {
-  topo:      { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}', opts:{ maxZoom:16, maxNativeZoom:16, attribution:'USGS' } },
-  satellite: { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}', opts:{ maxZoom:16, maxNativeZoom:16, attribution:'USGS' } },
-  osm:       { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', opts:{ maxZoom:19, attribution:'© OSM' } },
+  'Topo':      { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}', opts:{ maxZoom:16, maxNativeZoom:16, attribution:'USGS' } },
+  'Satellite': { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}', opts:{ maxZoom:16, maxNativeZoom:16, attribution:'USGS' } },
+  'Street':    { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', opts:{ maxZoom:19, attribution:'© OSM' } },
+  'Dark':      { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts:{ subdomains:'abcd', maxZoom:19, attribution:'© CartoDB' } },
 };
 
 // Extract viewer token from URL: /view/:token
@@ -25,8 +27,39 @@ async function init() {
 function initMap() {
   leafletMap = L.map('viewer-map', { zoomControl: true, maxZoom: 18 });
   markerLayer = L.layerGroup().addTo(leafletMap);
-  currentBaseLayer = L.tileLayer(BASE_LAYERS.topo.url, BASE_LAYERS.topo.opts).addTo(leafletMap);
+  viewerBaseTiles = {};
+  for (const [name, cfg] of Object.entries(BASE_LAYERS)) {
+    viewerBaseTiles[name] = L.tileLayer(cfg.url, cfg.opts);
+  }
+  viewerBaseTiles['Topo'].addTo(leafletMap);
+  viewerLayersControl = L.control.layers(viewerBaseTiles, {}, { collapsed: true, position: 'topright' }).addTo(leafletMap);
   leafletMap.setView([39.5, -98.5], 5);
+}
+
+async function setupWeatherLayers(owmKey) {
+  // Rebuild layers control with base layers + fresh weather overlays
+  if (viewerLayersControl) { leafletMap.removeControl(viewerLayersControl); viewerLayersControl = null; }
+  const overlays = {};
+  try {
+    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const d = await r.json();
+    const frame = d.radar?.past?.slice(-1)[0];
+    if (frame) overlays['&#127783; Radar'] = L.tileLayer(
+      `https://tilecache.rainviewer.com${frame.path}/512/{z}/{x}/{y}/2/1_1.png`,
+      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200 }
+    );
+  } catch {}
+  if (owmKey) {
+    const owm = (layer, opacity) => L.tileLayer(
+      `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
+      { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 19, zIndex: 200 }
+    );
+    overlays['&#127783; Precipitation'] = owm('precipitation_new');
+    overlays['&#9729; Clouds']          = owm('clouds_new', 0.45);
+    overlays['&#127790; Wind Speed']    = owm('wind_new');
+    overlays['&#127777; Temperature']   = owm('temp_new', 0.5);
+  }
+  viewerLayersControl = L.control.layers(viewerBaseTiles, overlays, { collapsed: true, position: 'topright' }).addTo(leafletMap);
 }
 
 function handleWS(msg) {
@@ -59,6 +92,7 @@ function handleInit(data) {
   renderStationMarkers();
   renderAllMarkers();
   renderLeaderboard();
+  if (race.weather_enabled) setupWeatherLayers(data.weatherKey);
 }
 
 function enrichParticipant(p, registry) {

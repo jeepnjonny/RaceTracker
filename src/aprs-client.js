@@ -64,7 +64,9 @@ function parsePosition(body) {
 function processLine(line) {
   if (!line) return;
   if (line.startsWith('#')) {
-    logger.log('aprs', 'debug', line);
+    // Skip periodic server heartbeat banners (# aprsc ...) — only log meaningful server responses
+    if (/^# aprsc\b/.test(line)) return;
+    logger.log('aprs', 'info', line);
     return;
   }
 
@@ -81,7 +83,7 @@ function processLine(line) {
   const pos = parsePosition(body);
   if (!pos) return;
 
-  logger.log('aprs', 'info', `POS ${fromCall} ${pos.lat.toFixed(5)},${pos.lon.toFixed(5)}`);
+  logger.log('aprs', 'info', `position from ${fromCall} (${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)})`);
 
   // Delegate to mqtt-client's handlePosition for registry/geofence/broadcast
   try {
@@ -183,7 +185,8 @@ function connect(config) {
 
   const loginLine = `user ${config.callsign} pass ${config.passcode} vers RaceTracker 1.0${filterStr ? ' filter ' + filterStr : ''}\r\n`;
 
-  logger.log('aprs', 'info', `Connecting to ${config.server}:${config.port} as ${config.callsign}${filterStr ? ' [' + filterStr + ']' : ''}`);
+  logger.log('aprs', 'info', `Connecting to ${config.server}:${config.port} as ${config.callsign}`);
+  if (filterStr) logger.log('aprs', 'info', `Filter: ${filterStr}`);
 
   socket = new net.Socket();
   socket.setEncoding('utf8');
@@ -264,7 +267,7 @@ function notifyRosterChange() {
   const filterStr = buildCallsignFilter();
   currentConfig.filterStr = filterStr;
   if (filterStr) {
-    logger.log('aprs', 'info', `Filter update: ${filterStr}`);
+    logger.log('aprs', 'info', `Sending filter update: ${filterStr}`);
     try { socket.write(`#filter ${filterStr}\r\n`); } catch {}
   }
 }

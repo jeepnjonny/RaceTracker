@@ -124,6 +124,16 @@ app.get('/api/trackers', (req, res) => {
   res.json({ ok: true, data: trackers });
 });
 
+app.delete('/api/trackers', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  const hours = parseFloat(req.query.olderThan);
+  if (!hours || hours <= 0) return res.status(400).json({ ok: false, error: 'olderThan must be > 0' });
+  const cutoff = Math.floor(Date.now() / 1000) - Math.round(hours * 3600);
+  const info = db.prepare('DELETE FROM tracker_registry WHERE last_seen < ? OR last_seen IS NULL').run(cutoff);
+  res.json({ ok: true, deleted: info.changes });
+});
+
 // Latest positions for active race
 app.get('/api/live', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ ok: false, error: 'Not authenticated' });
@@ -141,6 +151,40 @@ app.get('/api/live', (req, res) => {
     WHERE tp.race_id=?
   `).all(race.id, race.id, race.id);
   res.json({ ok: true, data: positions });
+});
+
+// ── Weather status/test ───────────────────────────────────────────────────────
+app.get('/api/weather/status', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ ok: false });
+  const keyRow = db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get();
+  res.json({ ok: true, data: { configured: !!(keyRow?.value) } });
+});
+
+app.post('/api/weather/test', async (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  const keyRow = db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get();
+  const apiKey = keyRow?.value;
+  if (!apiKey) return res.json({ ok: false, error: 'No API key configured' });
+  const https = require('https');
+  // Test with a known fixed location (London) — we just need to validate the key
+  const url = `https://api.openweathermap.org/data/2.5/weather?lat=51.5&lon=-0.1&appid=${apiKey}`;
+  try {
+    await new Promise((resolve, reject) => {
+      https.get(url, r => {
+        let d = '';
+        r.on('data', c => d += c);
+        r.on('end', () => {
+          const j = JSON.parse(d);
+          if (r.statusCode === 200) resolve(j);
+          else reject(new Error(j.message || `HTTP ${r.statusCode}`));
+        });
+      }).on('error', reject);
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 
 // ── Logs ──────────────────────────────────────────────────────────────────────

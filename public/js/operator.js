@@ -4,7 +4,7 @@ const OP = (() => {
 let race = null, participants = {}, stations = [], heats = {}, classes = {};
 let personnel = [], messages = [];
 let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = null;
-let leafletMap = null, currentBaseLayer = null;
+let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
 let clockInterval = null, missingCheckInterval = null, stoppedCheckInterval = null;
@@ -47,6 +47,7 @@ function handleWS(msg) {
   else if (type === 'participant_update') handleParticipantUpdate(data);
   else if (type === 'station_update') handleStationUpdate(data);
   else if (type === 'mqtt_status') updateMqttPill(data);
+  else if (type === 'aprs_status') updateAprsPill(data);
   else if (type === 'tracker_info') handleTrackerInfo(data);
 }
 
@@ -64,6 +65,7 @@ function handleInit(data) {
   fmt24 = race.time_format === '24h';
   updateRacePill(race);
   updateMqttPill(data.mqtt);
+  if (data.aprs) updateAprsPill(data.aprs);
   applyMessagingFlag();
 
   heats = {}; (data.heats || []).forEach(h => heats[h.id] = h);
@@ -84,6 +86,8 @@ function handleInit(data) {
   updateStats();
   checkStationWarnings();
   if (!trackPoints) loadTrackData(); // fallback API fetch if WS didn't include track
+  if (race.weather_enabled) setupWeatherLayers(data.weatherKey);
+  else if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
 }
 
 async function loadInitialData() {
@@ -146,6 +150,33 @@ function setBaseLayer(name) {
   const cfg = BASE_LAYERS[name] || BASE_LAYERS.topo;
   currentBaseLayer = L.tileLayer(cfg.url, cfg.opts).addTo(leafletMap);
   document.getElementById('base-layer-sel').value = name;
+}
+
+async function setupWeatherLayers(owmKey) {
+  if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
+  const overlays = {};
+  try {
+    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const d = await r.json();
+    const frame = d.radar?.past?.slice(-1)[0];
+    if (frame) overlays['&#127783; Radar'] = L.tileLayer(
+      `https://tilecache.rainviewer.com${frame.path}/512/{z}/{x}/{y}/2/1_1.png`,
+      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200 }
+    );
+  } catch {}
+  if (owmKey) {
+    const owm = (layer, opacity) => L.tileLayer(
+      `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
+      { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 19, zIndex: 200 }
+    );
+    overlays['&#127783; Precipitation'] = owm('precipitation_new');
+    overlays['&#9729; Clouds']          = owm('clouds_new', 0.45);
+    overlays['&#127790; Wind Speed']    = owm('wind_new');
+    overlays['&#127777; Temperature']   = owm('temp_new', 0.5);
+  }
+  if (Object.keys(overlays).length) {
+    weatherLayersControl = L.control.layers({}, overlays, { collapsed: true, position: 'topright' }).addTo(leafletMap);
+  }
 }
 
 function onMapClick(e) {
@@ -616,8 +647,20 @@ function handleTrackerInfo(data) {
 
 function updateMqttPill(status) {
   const pill = document.getElementById('mqtt-pill');
-  if (status?.connected) { pill.className = 'pill pill-ok pill-pulse'; pill.textContent = 'MQTT'; }
-  else { pill.className = 'pill pill-error'; pill.textContent = 'MQTT OFFLINE'; }
+  if (!pill) return;
+  pill.textContent = 'MQTT';
+  if (status?.connected) pill.className = 'pill pill-ok pill-pulse';
+  else if (status?.enabled) pill.className = 'pill pill-error';
+  else pill.className = 'pill pill-idle';
+}
+
+function updateAprsPill(status) {
+  const pill = document.getElementById('aprs-pill');
+  if (!pill) return;
+  pill.textContent = 'APRS';
+  if (status?.connected) pill.className = 'pill pill-ok pill-pulse';
+  else if (status?.enabled) pill.className = 'pill pill-error';
+  else pill.className = 'pill pill-idle';
 }
 
 function updateRacePill(r) {

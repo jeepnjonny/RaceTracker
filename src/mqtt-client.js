@@ -155,14 +155,14 @@ function handleTextMessage({ fromNodeId, toNodeId, text, timestamp }) {
   });
 }
 
-// Match nodeId (could be !hex, longname, or shortname) to a participant
+// Match nodeId (could be !hex, longname, or shortname) to a participant — case-insensitive
 function findParticipant(nodeId, raceId) {
   const reg = db.prepare('SELECT long_name, short_name FROM tracker_registry WHERE node_id=?').get(nodeId);
   const ids = [nodeId, reg?.long_name, reg?.short_name].filter(Boolean);
   for (const id of ids) {
     const p = db.prepare(
-      'SELECT * FROM participants WHERE race_id=? AND (tracker_id=? OR tracker_id=?) LIMIT 1'
-    ).get(raceId, id, id.toLowerCase());
+      'SELECT * FROM participants WHERE race_id=? AND UPPER(tracker_id)=UPPER(?) LIMIT 1'
+    ).get(raceId, id);
     if (p) return p;
   }
   return null;
@@ -305,6 +305,7 @@ function checkOffCourse(participant, race, lat, lon, timestamp) {
     const last = lastOffCourseAlert.get(alertKey) || 0;
     if (timestamp - last > 120) { // suppress repeat alerts for 2 min
       lastOffCourseAlert.set(alertKey, timestamp);
+      logger.log('race', 'warn', `OFF COURSE — ${participant.name} (#${participant.bib}) ${Math.round(distanceFromRoute)}m from route`);
       broadcast('alert', {
         type: 'off_course',
         participantId: participant.id,
@@ -358,6 +359,7 @@ async function processProtoData(data, fromNode, snr, rssi) {
   if (data.portnum === PORTNUM.POSITION) {
     const Position = root.lookupType('meshtastic.Position');
     const pos = Position.decode(data.payload);
+    logger.log('mqtt', 'info', `position from ${fromHex}`);
     handlePosition({
       nodeId: fromHex,
       lat: pos.latitudeI / 1e7,

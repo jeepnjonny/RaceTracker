@@ -94,6 +94,7 @@ function sendInit(ws, user) {
     const mqttMod = require('./mqtt-client');
     const aprsMod = require('./aprs-client');
     const trackPoints = getTrackPointsForRace(race);
+    const wxRow = db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get();
 
     send(ws, 'init', {
       race,
@@ -105,6 +106,7 @@ function sendInit(ws, user) {
       trackPoints,
       mqtt: mqttMod.getStatus(),
       aprs: aprsMod.getStatus(),
+      weatherKey: race.weather_enabled ? (wxRow?.value || null) : null,
     });
   } catch (e) {
     console.error('[ws] sendInit error:', e.message);

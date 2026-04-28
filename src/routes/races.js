@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const mqttClient = require('../mqtt-client');
+const logger = require('../logger');
 const router = express.Router();
 
 const RACE_FIELDS = [
@@ -74,14 +75,19 @@ router.post('/:id/activate', requireRole('admin'), (req, res) => {
   const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
   if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
 
+  const prev = db.prepare("SELECT name FROM races WHERE status='active' LIMIT 1").get();
+  if (prev && prev.name !== race.name) logger.log('race', 'info', `DEACTIVATED — ${prev.name}`);
   db.prepare("UPDATE races SET status='past' WHERE status='active'").run();
   db.prepare("UPDATE races SET status='active' WHERE id=?").run(req.params.id);
+  logger.log('race', 'info', `ACTIVATED — ${race.name} (${race.date})`);
   mqttClient.connectFromSettings(db);
   res.json({ ok: true, data: { id: race.id, status: 'active' } });
 });
 
 router.post('/:id/deactivate', requireRole('admin'), (req, res) => {
+  const race = db.prepare('SELECT name FROM races WHERE id=?').get(req.params.id);
   db.prepare("UPDATE races SET status='past' WHERE id=? AND status='active'").run(req.params.id);
+  if (race) logger.log('race', 'info', `DEACTIVATED — ${race.name}`);
   // MQTT stays connected — handlePosition checks for active race before recording data
   res.json({ ok: true });
 });
