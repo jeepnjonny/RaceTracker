@@ -682,7 +682,6 @@ async function seedWaypointsToRace() {
     .map((w, i) => ({ ...w, type: document.getElementById(`wpt-type-${i}`)?.value || 'aid', checked: document.getElementById(`wpt-${i}`)?.checked }))
     .filter(w => w.checked);
   if (!waypoints.length) { RT.toast('No waypoints selected', 'warn'); return; }
-  if (!confirm(`Seed ${waypoints.length} station(s) to ${races.find(r=>r.id===raceId)?.name}? Existing stations are kept.`)) return;
   const res = await RT.post(`/api/races/${raceId}/stations/seed`, { waypoints });
   if (res.ok) {
     RT.toast(`Seeded ${res.data.length} stations`, 'ok');
