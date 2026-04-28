@@ -1043,8 +1043,6 @@ async function saveParticipant() {
 }
 
 async function deleteParticipant(id) {
-  const p = participants.find(x => x.id === id);
-  if (!confirm(`Delete ${p?.name || 'participant'} (Bib ${p?.bib})?`)) return;
   const res = await RT.del(`/api/races/${selectedRaceId}/participants/${id}`);
   if (res.ok) { await loadParticipants(); RT.toast('Participant deleted', 'ok'); }
   else RT.toast(res.error, 'warn');

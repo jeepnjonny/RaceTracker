@@ -119,7 +119,7 @@ function broadcast(msg) {
   const str = JSON.stringify(msg);
   for (const ws of clients) {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(str);
+      try { ws.send(str); } catch (e) { clients.delete(ws); }
     }
   }
 }
