@@ -176,6 +176,12 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
   const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(race.id);
   if (!stations.length) return;
 
+  // Pre-find start station so the finish guard can check whether the participant
+  // has cleared it. Only applies to 'finish' stations (start_finish is already
+  // protected by the turnaround requirement).
+  const startStn = stations.find(s => (s.type === 'start' || s.type === 'start_finish') && s.lat && s.lon);
+  const startRadius = race.geofence_radius || 15;
+
   for (const station of stations) {
     if (!station.lat || !station.lon) continue;
     const dist = geo.haversine(lat, lon, station.lat, station.lon);
@@ -200,9 +206,14 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       if (station.type === 'start' && participant.status === 'dns') {
         // start fires on depart, not arrive — arriveKey already set above
       } else if (station.type === 'finish' && participant.status === 'active' && autoStart) {
-        eventType = 'finish';
-        statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
-        statusArgs = [timestamp, participant.id];
+        const clearOfStart = !startStn || !participant.start_time ||
+          (timestamp - participant.start_time >= 20 * 60) ||
+          geo.haversine(lat, lon, startStn.lat, startStn.lon) > startRadius;
+        if (clearOfStart) {
+          eventType = 'finish';
+          statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
+          statusArgs = [timestamp, participant.id];
+        }
       } else if (station.type === 'start_finish') {
         if (participant.status === 'dns') {
           // start fires on depart, not arrive — arriveKey already set above
