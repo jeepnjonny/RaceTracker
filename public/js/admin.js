@@ -55,12 +55,16 @@ function handleWS(msg) {
 
 function updateMqttPill(status) {
   const pill = document.getElementById('mqtt-pill');
+  if (!pill) return;
   if (status.connected) {
     pill.className = 'pill pill-ok pill-pulse';
-    pill.textContent = 'MQTT LIVE';
-  } else {
+    pill.textContent = 'MQTT';
+  } else if (status.enabled) {
     pill.className = 'pill pill-error';
-    pill.textContent = 'MQTT OFFLINE';
+    pill.textContent = 'MQTT';
+  } else {
+    pill.className = 'pill pill-idle';
+    pill.textContent = 'MQTT';
   }
 }
 
@@ -1376,6 +1380,10 @@ function renderSettingsTab() {
   return `
   <div class="card">
     <h3>MESHTASTIC / MQTT</h3>
+    <div class="checkbox-row" style="margin-bottom:10px">
+      <input type="checkbox" id="s-mqtt-enabled" checked>
+      <label for="s-mqtt-enabled" style="font-size:12px">Enable MQTT data source</label>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
       <div class="form-group">
@@ -1420,7 +1428,6 @@ function renderSettingsTab() {
     <div class="checkbox-row" style="margin-bottom:10px">
       <input type="checkbox" id="s-aprs-enabled" onchange="updateAprsFilterPreview()">
       <label for="s-aprs-enabled" style="font-size:12px">Enable APRS-IS data source</label>
-      <span id="aprs-pill" class="pill pill-idle" style="margin-left:8px;font-size:10px">OFFLINE</span>
     </div>
     <div class="form-row">
       <div class="form-group"><label>CALLSIGN</label><input id="s-aprs-callsign" placeholder="K7SWI" oninput="this.value=this.value.toUpperCase()"></div>
@@ -1478,6 +1485,7 @@ async function bindSettingsTab() {
   if (!sRes.ok) return;
   const s = sRes.data;
 
+  document.getElementById('s-mqtt-enabled').checked    = s.mqtt_enabled !== '0';
   document.getElementById('s-mqtt-host').value         = s.mqtt_host || '';
   document.getElementById('s-mqtt-protocol').value     = s.mqtt_protocol || 'tcp';
   document.getElementById('s-mqtt-port').value         = s.mqtt_port || s.mqtt_port_ws || (s.mqtt_protocol === 'ws' ? '9001' : '1883');
@@ -1504,6 +1512,7 @@ async function bindSettingsTab() {
 
 async function saveMqttSettings() {
   const res = await RT.put('/api/settings', {
+    mqtt_enabled:    document.getElementById('s-mqtt-enabled').checked ? '1' : '0',
     mqtt_host:       document.getElementById('s-mqtt-host').value.trim() || null,
     mqtt_protocol:   document.getElementById('s-mqtt-protocol').value,
     mqtt_port:       document.getElementById('s-mqtt-port').value || '1883',
@@ -1562,23 +1571,14 @@ async function testMqtt() {
 }
 
 function updateAprsPill(status) {
-  // Settings-tab pill
-  const pill = document.getElementById('aprs-pill');
-  if (pill) {
-    if (status.connected) {
-      pill.className = 'pill pill-ok pill-pulse';
-      pill.textContent = 'LIVE';
-    } else {
-      pill.className = 'pill pill-idle';
-      pill.textContent = 'OFFLINE';
-    }
-  }
-  // Topbar pill (only visible when connected)
-  const topPill = document.getElementById('aprs-topbar-pill');
-  if (topPill) {
-    topPill.style.display = status.connected ? '' : 'none';
-    topPill.className = status.connected ? 'pill pill-ok pill-pulse' : 'pill pill-idle';
-    topPill.textContent = 'APRS LIVE';
+  const pill = document.getElementById('aprs-topbar-pill');
+  if (!pill) return;
+  if (status.connected) {
+    pill.className = 'pill pill-ok pill-pulse';
+  } else if (status.enabled) {
+    pill.className = 'pill pill-error';
+  } else {
+    pill.className = 'pill pill-idle';
   }
 }
 

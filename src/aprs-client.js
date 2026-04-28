@@ -19,6 +19,7 @@ function setWs(ws) { wsRef = ws; }
 function getStatus() {
   return {
     connected: _connected,
+    enabled: !!(currentConfig),
     server: currentConfig?.server,
     filterType: currentConfig?.filterType,
     filterStr: currentConfig?.filterStr || '',

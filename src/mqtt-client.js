@@ -410,6 +410,8 @@ function connectFromSettings(db) {
   const rows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'mqtt_%'").all();
   const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
   if (!s.mqtt_host) return false;
+  // mqtt_enabled defaults to '1' if never set (backward compat)
+  if (s.mqtt_enabled === '0') { disconnect(); return false; }
   const protocol = s.mqtt_protocol || 'tcp';
   const defaultPort = protocol === 'ws' ? 9001 : 1883;
   connect({
@@ -504,10 +506,13 @@ function disconnect() {
     mqttClient.end(true);
     mqttClient = null;
   }
+  currentConfig = null;
+  broadcast('mqtt_status', { connected: false, enabled: false });
 }
 
 function getStatus() {
-  return { connected: !!(mqttClient && mqttClient.connected) };
+  const enabled = !!(currentConfig);
+  return { connected: !!(mqttClient && mqttClient.connected), enabled };
 }
 
 // Publish an outbound text message to a specific node
