@@ -232,7 +232,10 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
         db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
           .run(race.id, participant.id, eventType, station.id, timestamp);
         if (statusSql) db.prepare(statusSql).run(...statusArgs);
-        broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp });
+        const has_turnaround = station.type === 'turnaround' ||
+          !!(db.prepare(`SELECT 1 FROM events WHERE participant_id=? AND race_id=? AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround') LIMIT 1`)
+            .get(participant.id, race.id, race.id));
+        broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp, has_turnaround });
       }
 
     } else if (!inside && recentGeofenceEvents.has(arriveKey) && !recentGeofenceEvents.has(departKey)) {

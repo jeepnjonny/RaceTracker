@@ -34,14 +34,23 @@ const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
 const router = express.Router({ mergeParams: true });
 
+const stmtHeat    = db.prepare('SELECT name, color, shape FROM heats WHERE id=?');
+const stmtClass   = db.prepare('SELECT name FROM classes WHERE id=?');
+const stmtReg     = db.prepare('SELECT last_lat, last_lon, battery_level, last_seen, snr, rssi FROM tracker_registry WHERE node_id=? OR long_name=? OR short_name=?');
+const stmtTurnEvt = db.prepare(`
+  SELECT 1 FROM events
+  WHERE participant_id=? AND race_id=?
+  AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround')
+  LIMIT 1
+`);
+
 function enrichParticipant(p) {
   if (!p) return p;
-  const heat = p.heat_id ? db.prepare('SELECT name, color, shape FROM heats WHERE id=?').get(p.heat_id) : null;
-  const cls  = p.class_id ? db.prepare('SELECT name FROM classes WHERE id=?').get(p.class_id) : null;
-  const reg  = p.tracker_id ? db.prepare(
-    'SELECT last_lat, last_lon, battery_level, last_seen, snr, rssi FROM tracker_registry WHERE node_id=? OR long_name=? OR short_name=?'
-  ).get(p.tracker_id, p.tracker_id, p.tracker_id) : null;
-  return { ...p, heat, class: cls, tracker: reg };
+  const heat = p.heat_id  ? stmtHeat.get(p.heat_id)   : null;
+  const cls  = p.class_id ? stmtClass.get(p.class_id) : null;
+  const reg  = p.tracker_id ? stmtReg.get(p.tracker_id, p.tracker_id, p.tracker_id) : null;
+  const has_turnaround = !!(stmtTurnEvt.get(p.id, p.race_id, p.race_id));
+  return { ...p, heat, class: cls, tracker: reg, has_turnaround };
 }
 
 router.get('/', requireAuth, (req, res) => {

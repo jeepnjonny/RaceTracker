@@ -277,8 +277,7 @@ const STATUS_COLORS = { dns: '#484f58', active: '#58a6ff', dnf: '#f78166', finis
 
 function computePercent(p) {
   if (!p.last_lat || !p.last_lon || !trackPoints || !trackPoints.length) return null;
-  // Simple linear interpolation along track
-  let minD = Infinity, bestPct = 0, totalDist = 0;
+  let minD = Infinity, bestAlong = 0, totalDist = 0;
   const dists = [0];
   for (let i = 1; i < trackPoints.length; i++) {
     const d = haversine(trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]);
@@ -292,9 +291,15 @@ function computePercent(p) {
       Math.max(1e-10, (lat2-lat1)**2 + (lon2-lon1)**2));
     const closeLat = lat1 + t*(lat2-lat1), closeLon = lon1 + t*(lon2-lon1);
     const d = haversine(p.last_lat, p.last_lon, closeLat, closeLon);
-    if (d < minD) { minD = d; bestPct = (dists[i] + t * segLen) / totalDist * 100; }
+    if (d < minD) { minD = d; bestAlong = dists[i] + t * segLen; }
   }
-  return Math.min(100, bestPct);
+  // For out-and-back: full race = 2x one-way track.
+  // Outbound: 0–50%. Return leg (after turnaround): 50–100%.
+  if (race?.race_format === 'out_and_back') {
+    if (p.has_turnaround) return Math.min(100, (2 * totalDist - bestAlong) / (2 * totalDist) * 100);
+    return Math.min(50, bestAlong / (2 * totalDist) * 100);
+  }
+  return Math.min(100, bestAlong / totalDist * 100);
 }
 
 function computePace(p) {
@@ -303,8 +308,9 @@ function computePace(p) {
   if (!pct || !trackPoints) return null;
   const elapsed = Math.floor(Date.now() / 1000) - p.start_time;
   if (elapsed <= 0) return null;
-  const totalDist = computeTotalDist();
+  let totalDist = computeTotalDist();
   if (!totalDist) return null;
+  if (race?.race_format === 'out_and_back') totalDist *= 2;
   return (pct / 100 * totalDist) / elapsed; // m/s
 }
 
@@ -542,12 +548,12 @@ function handlePosition(data) {
 function handleEvent(data) {
   appendEventLog(data);
   if (data.participantId && participants[data.participantId]) {
-    // Refresh participant info if selected
+    const p = participants[data.participantId];
+    if (data.event_type === 'start')  p.status = 'active';
+    if (data.event_type === 'finish') p.status = 'finished';
+    if (data.event_type === 'dnf')    p.status = 'dnf';
+    if (data.has_turnaround)          p.has_turnaround = true;
     if (data.participantId === selectedPId) showParticipantInfo(data.participantId);
-    // Update status
-    if (data.event_type === 'start')    participants[data.participantId].status = 'active';
-    if (data.event_type === 'finish')   participants[data.participantId].status = 'finished';
-    if (data.event_type === 'dnf')      participants[data.participantId].status = 'dnf';
     renderLeaderboard();
   }
 }
