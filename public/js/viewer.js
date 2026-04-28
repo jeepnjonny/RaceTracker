@@ -45,8 +45,8 @@ async function setupWeatherLayers(owmKey) {
     const d = await r.json();
     const frame = d.radar?.past?.slice(-1)[0];
     if (frame) overlays['&#127783; Radar'] = L.tileLayer(
-      `https://tilecache.rainviewer.com${frame.path}/512/{z}/{x}/{y}/2/1_1.png`,
-      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200 }
+      `${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
+      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxNativeZoom: 12 }
     );
   } catch {}
   if (owmKey) {
