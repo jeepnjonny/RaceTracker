@@ -102,6 +102,13 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// Bulk delete all participants for a race
+router.delete('/', requireRole('admin'), (req, res) => {
+  const result = db.prepare('DELETE FROM participants WHERE race_id=?').run(req.params.raceId);
+  wsManager.broadcast({ type: 'participant_update', data: { action: 'clear', raceId: req.params.raceId } });
+  res.json({ ok: true, deleted: result.changes });
+});
+
 // CSV import: bib, name, tracker_id, heat, class, age, phone, emergency_contact
 const stmtUpsertParticipant = db.prepare(`
   INSERT INTO participants (race_id, bib, name, tracker_id, heat_id, class_id, age, phone, emergency_contact)

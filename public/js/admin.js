@@ -1052,10 +1052,9 @@ async function deleteParticipant(id) {
 
 async function clearAllParticipants() {
   if (!confirm(`Delete ALL participants from this race? This cannot be undone.`)) return;
-  const ids = participants.map(p => p.id);
-  await Promise.all(ids.map(id => RT.del(`/api/races/${selectedRaceId}/participants/${id}`)));
-  await loadParticipants();
-  RT.toast('All participants cleared', 'ok');
+  const res = await RT.del(`/api/races/${selectedRaceId}/participants`);
+  if (res.ok) { await loadParticipants(); RT.toast(`Cleared ${res.deleted} participants`, 'ok'); }
+  else RT.toast(res.error || 'Failed to clear participants', 'warn');
 }
 
 function togglePtCsvPanel() {
