@@ -86,8 +86,7 @@ function handleInit(data) {
   updateStats();
   checkStationWarnings();
   if (!trackPoints) loadTrackData(); // fallback API fetch if WS didn't include track
-  if (race.weather_enabled) setupWeatherLayers(data.weatherKey);
-  else if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
+  setupWeatherLayers(data.weatherKey);
 }
 
 async function loadInitialData() {

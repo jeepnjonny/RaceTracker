@@ -106,7 +106,7 @@ function sendInit(ws, user) {
       trackPoints,
       mqtt: mqttMod.getStatus(),
       aprs: aprsMod.getStatus(),
-      weatherKey: race.weather_enabled ? (wxRow?.value || null) : null,
+      weatherKey: (user.role !== 'viewer' || race.weather_enabled) ? (wxRow?.value || null) : null,
     });
   } catch (e) {
     console.error('[ws] sendInit error:', e.message);
