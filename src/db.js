@@ -229,6 +229,8 @@ try { db.prepare('ALTER TABLE races ADD COLUMN feat_auto_log INTEGER NOT NULL DE
 try { db.prepare('ALTER TABLE races ADD COLUMN feat_auto_start INTEGER NOT NULL DEFAULT 1').run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN feat_off_course INTEGER NOT NULL DEFAULT 1').run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN feat_stopped INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN checkpoint_radius INTEGER DEFAULT 50').run(); } catch {}
+try { db.prepare("ALTER TABLE races ADD COLUMN speed_units TEXT NOT NULL DEFAULT 'min_mile'").run(); } catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

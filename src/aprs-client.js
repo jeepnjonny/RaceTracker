@@ -1,0 +1,276 @@
+'use strict';
+const net = require('net');
+const db = require('./db');
+const geo = require('./geo');
+const logger = require('./logger');
+
+let socket = null;
+let wsRef = null;
+let currentConfig = null;
+let lineBuffer = '';
+let reconnectTimer = null;
+let _connected = false;
+
+// Matches bare callsign or callsign-SSID (1–6 alphanum chars, SSID 1–15)
+const APRS_CALL_RE = /^[A-Z0-9]{1,6}(-(?:1[0-5]|[0-9]))?$/;
+
+function setWs(ws) { wsRef = ws; }
+
+function getStatus() {
+  return {
+    connected: _connected,
+    server: currentConfig?.server,
+    filterType: currentConfig?.filterType,
+    filterStr: currentConfig?.filterStr || '',
+  };
+}
+
+function broadcast(type, data) {
+  if (wsRef) { try { wsRef.broadcast({ type, data }); } catch {} }
+}
+
+// Parse APRS DM notation (DDMM.mmN) to decimal degrees
+function parseDM(dm, hemi) {
+  const dot = dm.indexOf('.');
+  if (dot < 2) return null;
+  const deg = parseFloat(dm.slice(0, dot - 2));
+  const min = parseFloat(dm.slice(dot - 2));
+  if (isNaN(deg) || isNaN(min)) return null;
+  let dd = deg + min / 60;
+  if (hemi === 'S' || hemi === 'W') dd = -dd;
+  return dd;
+}
+
+// Parse uncompressed and timestamped APRS position bodies
+function parsePosition(body) {
+  // Uncompressed: [!=]DDMM.mmN[sym]DDDMM.mmE
+  const plain = /[!=](\d{4}\.\d+)([NS])[\S](\d{5}\.\d+)([EW])/.exec(body);
+  if (plain) {
+    const lat = parseDM(plain[1], plain[2]);
+    const lon = parseDM(plain[3], plain[4]);
+    if (lat != null && lon != null) return { lat, lon };
+  }
+  // Timestamped: [/@]\d{6}[z/h]DDMM.mmN[sym]DDDMM.mmE
+  const ts = /[@\/]\d{6}[zZhH\/](\d{4}\.\d+)([NS])[\S](\d{5}\.\d+)([EW])/.exec(body);
+  if (ts) {
+    const lat = parseDM(ts[1], ts[2]);
+    const lon = parseDM(ts[3], ts[4]);
+    if (lat != null && lon != null) return { lat, lon };
+  }
+  return null;
+}
+
+function processLine(line) {
+  if (!line) return;
+  if (line.startsWith('#')) {
+    logger.log('aprs', 'debug', line);
+    return;
+  }
+
+  const ci = line.indexOf(':');
+  if (ci < 0) return;
+  const header = line.slice(0, ci);
+  const body   = line.slice(ci + 1);
+
+  const gi = header.indexOf('>');
+  if (gi < 0) return;
+  const fromCall = header.slice(0, gi).toUpperCase().trim();
+  if (!fromCall) return;
+
+  const pos = parsePosition(body);
+  if (!pos) return;
+
+  logger.log('aprs', 'info', `POS ${fromCall} ${pos.lat.toFixed(5)},${pos.lon.toFixed(5)}`);
+
+  // Delegate to mqtt-client's handlePosition for registry/geofence/broadcast
+  try {
+    require('./mqtt-client').handlePosition({
+      nodeId: fromCall,
+      lat: pos.lat,
+      lon: pos.lon,
+      altitude: null,
+      speed: null,
+      heading: null,
+      snr: null,
+      rssi: null,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+  } catch (e) {
+    logger.log('aprs', 'error', `handlePosition: ${e.message}`);
+  }
+}
+
+// ── Filter builders ───────────────────────────────────────────────────────────
+
+function buildLocationFilter() {
+  const race = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
+  if (!race) return '';
+
+  let points = [];
+  try {
+    const fs = require('fs');
+    if (race.course_id) {
+      const course = db.prepare('SELECT * FROM courses WHERE id=?').get(race.course_id);
+      if (course) {
+        const raw = fs.readFileSync(course.file_path, 'utf8');
+        const { parseCourse } = require('./routes/courses');
+        const { trackPoints } = parseCourse(raw, course.file_path, course.path_index);
+        if (trackPoints?.length) points = trackPoints;
+      }
+    }
+    if (!points.length && race.track_file) {
+      const raw = fs.readFileSync(race.track_file, 'utf8');
+      const { parseTrack } = require('./routes/tracks');
+      const tp = parseTrack(raw, race.track_file, race.track_path_index);
+      if (tp?.length) points = tp;
+    }
+  } catch {}
+
+  if (!points.length) {
+    const stns = db.prepare('SELECT lat, lon FROM stations WHERE race_id=? AND lat IS NOT NULL AND lon IS NOT NULL').all(race.id);
+    points = stns.map(s => [s.lat, s.lon]);
+  }
+
+  if (!points.length) return '';
+
+  let sumLat = 0, sumLon = 0;
+  for (const [lat, lon] of points) { sumLat += lat; sumLon += lon; }
+  const cLat = sumLat / points.length;
+  const cLon = sumLon / points.length;
+
+  let maxDist = 0;
+  for (const [lat, lon] of points) {
+    const d = geo.haversine(cLat, cLon, lat, lon) / 1000; // km
+    if (d > maxDist) maxDist = d;
+  }
+  const radius = Math.max(5, Math.ceil(maxDist * 1.5));
+
+  return `r/${cLat.toFixed(4)}/${cLon.toFixed(4)}/${radius}`;
+}
+
+function buildCallsignFilter(raceId) {
+  const race = raceId
+    ? db.prepare('SELECT id FROM races WHERE id=?').get(raceId)
+    : db.prepare("SELECT id FROM races WHERE status='active' LIMIT 1").get();
+  if (!race) return '';
+
+  const calls = new Set();
+  const addId = raw => {
+    const id = (raw || '').trim().toUpperCase();
+    if (APRS_CALL_RE.test(id)) calls.add(id);
+  };
+
+  db.prepare('SELECT tracker_id FROM participants WHERE race_id=? AND tracker_id IS NOT NULL').all(race.id)
+    .forEach(p => addId(p.tracker_id));
+  db.prepare('SELECT tracker_id FROM personnel WHERE race_id=? AND tracker_id IS NOT NULL').all(race.id)
+    .forEach(p => addId(p.tracker_id));
+
+  return calls.size ? 'b/' + [...calls].join('/') : '';
+}
+
+function buildFilter(filterType) {
+  return filterType === 'location' ? buildLocationFilter() : buildCallsignFilter();
+}
+
+// ── Connection management ─────────────────────────────────────────────────────
+
+function connect(config) {
+  disconnect();
+  currentConfig = { ...config };
+  const filterStr = buildFilter(config.filterType);
+  currentConfig.filterStr = filterStr;
+
+  const loginLine = `user ${config.callsign} pass ${config.passcode} vers RaceTracker 1.0${filterStr ? ' filter ' + filterStr : ''}\r\n`;
+
+  logger.log('aprs', 'info', `Connecting to ${config.server}:${config.port} as ${config.callsign}${filterStr ? ' [' + filterStr + ']' : ''}`);
+
+  socket = new net.Socket();
+  socket.setEncoding('utf8');
+  socket.setTimeout(120000); // 2-min idle keepalive
+
+  socket.connect(config.port, config.server, () => {
+    _connected = true;
+    socket.write(loginLine);
+    logger.log('aprs', 'info', `Connected — login sent`);
+    broadcast('aprs_status', getStatus());
+  });
+
+  socket.on('data', chunk => {
+    lineBuffer += chunk;
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop();
+    for (const line of lines) processLine(line.trim());
+  });
+
+  socket.on('timeout', () => {
+    logger.log('aprs', 'warn', 'Keepalive ping');
+    try { socket.write('#keepalive\r\n'); } catch {}
+  });
+
+  socket.on('error', err => {
+    _connected = false;
+    logger.log('aprs', 'error', `Socket error: ${err.message}`);
+    broadcast('aprs_status', { connected: false, error: err.message });
+    scheduleReconnect();
+  });
+
+  socket.on('close', () => {
+    _connected = false;
+    logger.log('aprs', 'info', 'Socket closed');
+    broadcast('aprs_status', { connected: false });
+    scheduleReconnect();
+  });
+}
+
+function scheduleReconnect() {
+  if (!currentConfig?.enabled || reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (currentConfig?.enabled) {
+      logger.log('aprs', 'info', 'Reconnecting...');
+      connect(currentConfig);
+    }
+  }, 15000);
+}
+
+function disconnect() {
+  _connected = false;
+  currentConfig = null;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (socket) { try { socket.destroy(); } catch {} socket = null; }
+  lineBuffer = '';
+}
+
+function connectFromSettings(dbArg) {
+  const rows = (dbArg || db).prepare("SELECT key, value FROM settings WHERE key LIKE 'aprs_%'").all();
+  const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  if (s.aprs_enabled !== '1' || !s.aprs_callsign) return false;
+  connect({
+    enabled: true,
+    callsign: s.aprs_callsign.toUpperCase().trim(),
+    passcode: s.aprs_passcode || '-1',
+    server: s.aprs_server || 'rotate.aprs2.net',
+    port: parseInt(s.aprs_port) || 14580,
+    filterType: s.aprs_filter_type || 'location',
+  });
+  return true;
+}
+
+// Called after participants/personnel roster changes to refresh callsign filter live
+function notifyRosterChange() {
+  if (!socket || !_connected || !currentConfig) return;
+  if (currentConfig.filterType !== 'callsign') return;
+  const filterStr = buildCallsignFilter();
+  currentConfig.filterStr = filterStr;
+  if (filterStr) {
+    logger.log('aprs', 'info', `Filter update: ${filterStr}`);
+    try { socket.write(`#filter ${filterStr}\r\n`); } catch {}
+  }
+}
+
+// Compute the preview filter string without connecting (for the admin UI)
+function previewFilter(filterType) {
+  return buildFilter(filterType);
+}
+
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter };

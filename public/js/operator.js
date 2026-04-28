@@ -257,7 +257,7 @@ function renderLeaderboard() {
     const dot = heat ? `<span class="dot" style="background:${heat.color}"></span>` : '<span class="dot" style="background:var(--text3)"></span>';
     const sc = STATUS_COLORS[p.status] || 'var(--text3)';
     const pct = p._pct != null ? `${p._pct.toFixed(0)}%` : '--';
-    const pace = p._pace ? RT.fmtPace(p._pace) : '--';
+    const pace = p._pace ? RT.fmtSpeed(p._pace, race?.speed_units || 'min_mile') : '--';
     const bat = p.registry?.battery_level != null ? `${p.registry.battery_level}%` : '--';
     const rowCls = (alerting ? 'alert-row' : '') + (missing ? ' missing-row' : '') + (p.id === selectedPId ? ' selected' : '');
     return `<div class="lb-row ${rowCls}" onclick="OP.selectParticipant(${p.id})">

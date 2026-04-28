@@ -84,12 +84,25 @@ const RT = (() => {
     return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`;
   }
 
-  function fmtPace(mPerSec) {
+  function fmtSpeed(mPerSec, units) {
     if (!mPerSec || mPerSec <= 0) return '--';
-    const minPerMile = 26.8224 / mPerSec;
-    const m = Math.floor(minPerMile), s = Math.round((minPerMile - m) * 60);
-    return `${m}:${String(s).padStart(2,'0')}/mi`;
+    switch (units) {
+      case 'kmh': return `${(mPerSec * 3.6).toFixed(1)} km/h`;
+      case 'mph': return `${(mPerSec * 2.23694).toFixed(1)} mph`;
+      case 'min_km': {
+        const mpk = 1000 / mPerSec / 60;
+        const m = Math.floor(mpk), s = Math.round((mpk - m) * 60);
+        return `${m}:${String(s).padStart(2,'0')}/km`;
+      }
+      default: { // min_mile
+        const mpm = 26.8224 / mPerSec;
+        const m = Math.floor(mpm), s = Math.round((mpm - m) * 60);
+        return `${m}:${String(s).padStart(2,'0')}/mi`;
+      }
+    }
   }
+
+  function fmtPace(mPerSec) { return fmtSpeed(mPerSec, 'min_mile'); }
 
   function fmtBattery(pct) {
     if (pct == null) return '--';
@@ -180,6 +193,6 @@ const RT = (() => {
   }
 
   return { BASE, getMe, logout, requireLogin, api, get, post, put, del, connectWS,
-           fmtTime, fmtElapsed, fmtDist, fmtPace, fmtBattery, timeAgo,
+           fmtTime, fmtElapsed, fmtDist, fmtPace, fmtSpeed, fmtBattery, timeAgo,
            trackerIcon, SHAPES, statusBadge, toast, STATUS_COLORS, applyTheme, THEMES };
 })();

@@ -7,6 +7,8 @@ const db = require('./src/db');
 const wsManager = require('./src/websocket');
 const mqttClient = require('./src/mqtt-client');
 
+const logger = require('./src/logger');
+const aprsClient = require('./src/aprs-client');
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'racetracker-secret-' + Math.random().toString(36);
 
@@ -65,6 +67,33 @@ app.post('/api/settings/mqtt-test', (req, res) => {
   }, 2500);
 });
 
+// ── APRS-IS ──────────────────────────────────────────────────────────────────
+app.get('/api/aprs/status', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ ok: false });
+  res.json({ ok: true, data: aprsClient.getStatus() });
+});
+
+app.post('/api/aprs/connect', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  const ok = aprsClient.connectFromSettings(db);
+  setTimeout(() => res.json({ ok: true, data: aprsClient.getStatus() }), 2000);
+});
+
+app.post('/api/aprs/disconnect', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  aprsClient.disconnect();
+  res.json({ ok: true });
+});
+
+app.get('/api/aprs/filter-preview', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false });
+  const type = req.query.type || 'location';
+  res.json({ ok: true, filter: aprsClient.previewFilter(type) });
+});
+
 // ── Global settings ───────────────────────────────────────────────────────────
 app.get('/api/settings', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ ok: false, error: 'Not authenticated' });
@@ -114,6 +143,14 @@ app.get('/api/live', (req, res) => {
   res.json({ ok: true, data: positions });
 });
 
+// ── Logs ──────────────────────────────────────────────────────────────────────
+app.get('/api/logs', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+  const { channel, limit } = req.query;
+  res.json({ ok: true, data: logger.getLogs(channel, limit ? parseInt(limit) : 500) });
+});
+
 // ── SPA fallback — send index.html for unknown routes (except /api and /view) ─
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/view/')) return next();
@@ -130,11 +167,17 @@ app.use((err, req, res, _next) => {
 const server = http.createServer(app);
 const wss = wsManager.init(server, sessionMiddleware);
 mqttClient.setWs(wsManager);
+aprsClient.setWs(wsManager);
+logger.setWs(wsManager);
 
-// ── Auto-connect MQTT on startup if configured ────────────────────────────────
-const connected = mqttClient.connectFromSettings(db);
-if (connected) console.log('[server] MQTT connecting from global settings');
+// ── Auto-connect on startup ───────────────────────────────────────────────────
+const mqttOk = mqttClient.connectFromSettings(db);
+if (mqttOk) console.log('[server] MQTT connecting from global settings');
 else console.log('[server] No MQTT settings configured yet');
+
+const aprsOk = aprsClient.connectFromSettings(db);
+if (aprsOk) console.log('[server] APRS-IS connecting from global settings');
+else console.log('[server] APRS-IS not configured');
 
 server.listen(PORT, () => {
   console.log(`[server] RaceTracker listening on port ${PORT}`);

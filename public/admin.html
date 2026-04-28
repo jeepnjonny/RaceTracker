@@ -30,6 +30,8 @@
     border-bottom: 1px solid var(--border); font-size: 11px; }
   .infra-node { color: var(--accent4); font-weight: bold; min-width: 100px; }
   .icon-preview { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+  .log-ch-btn { padding: 3px 12px; font-size: 10px; letter-spacing: 1px; background: var(--surface2); border: 1px solid var(--border); color: var(--text3); border-radius: 4px; cursor: pointer; }
+  .log-ch-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
   @media (max-width: 700px) {
     #admin-content > div[style*="grid-template-columns:300px"] {
       display: flex !important; flex-direction: column;
@@ -42,6 +44,7 @@
   <h1>&#9654; RaceTracker</h1>
   <div class="pill pill-idle" id="active-race-pill">NO ACTIVE RACE</div>
   <div class="pill pill-idle" id="mqtt-pill">MQTT</div>
+  <div class="pill pill-idle" id="aprs-topbar-pill" style="display:none">APRS</div>
   <div id="topbar-right">
     <button onclick="window.location.href=RT.BASE+'operator.html'">OPERATOR VIEW</button>
     <button onclick="RT.logout()">LOGOUT</button>
@@ -81,6 +84,15 @@
         <label>TIME FORMAT</label>
         <select id="rm-time-format"><option value="12h">12-Hour</option><option value="24h" selected>24-Hour</option></select>
       </div>
+      <div class="form-group">
+        <label>SPEED UNITS</label>
+        <select id="rm-speed-units">
+          <option value="min_mile">Pace (min/mile)</option>
+          <option value="min_km">Pace (min/km)</option>
+          <option value="mph">Speed (mph)</option>
+          <option value="kmh">Speed (km/h)</option>
+        </select>
+      </div>
     </div>
     <div class="section-header">ALERTS &amp; AUTOMATION</div>
     <div style="display:flex;flex-direction:column;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px">
@@ -93,8 +105,12 @@
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-auto-log" checked>
         <label for="rm-feat-auto-log" style="flex:1;font-size:12px;cursor:pointer">Auto-log aid stations (geofence)</label>
-        <input id="rm-geofence" type="number" min="1" value="15" style="width:64px;text-align:right">
-        <span style="font-size:11px;color:var(--text3);min-width:24px">m</span>
+        <span style="font-size:10px;color:var(--text3)">start/finish</span>
+        <input id="rm-geofence" type="number" min="1" value="15" style="width:56px;text-align:right">
+        <span style="font-size:11px;color:var(--text3)">m</span>
+        <span style="font-size:10px;color:var(--text3)">checkpoint</span>
+        <input id="rm-checkpoint-radius" type="number" min="1" value="50" style="width:56px;text-align:right">
+        <span style="font-size:11px;color:var(--text3);min-width:16px">m</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-auto-start" checked>

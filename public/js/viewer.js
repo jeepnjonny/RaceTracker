@@ -172,7 +172,7 @@ function renderLeaderboard() {
     const dot = heat ? `<span class="dot" style="background:${heat.color}"></span>` : '';
     const pct = p._pct != null ? `${p._pct.toFixed(0)}%` : '--';
     const finished = p.status === 'finished';
-    return `<div class="v-lb-row ${finished ? 'text-ok' : ''}">
+    return `<div class="v-lb-row v-lb-cols ${finished ? 'text-ok' : ''}">
       <span style="color:var(--text3)">${i+1}</span>
       <span style="color:${sc};font-weight:bold">${p.bib}</span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dot} ${p.name}</span>

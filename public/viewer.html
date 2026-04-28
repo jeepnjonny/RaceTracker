@@ -2,42 +2,73 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RaceTracker — Live View</title>
 <base href="/RaceTracker/">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <link rel="stylesheet" href="css/theme.css">
 <style>
+  html, body { max-width: 100vw; overflow-x: hidden; }
   body { overflow: hidden; }
+
+  /* ── Topbar ── */
   #viewer-topbar {
     background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 8px 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    padding: 6px 10px; display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0; flex-wrap: nowrap; min-width: 0;
   }
-  #viewer-topbar h1 { font-size: 13px; font-weight: bold; letter-spacing: 2px; color: var(--accent); }
-  #viewer-main { display: flex; flex: 1; overflow: hidden; }
-  #viewer-map-wrap { flex: 1; position: relative; }
+  #viewer-topbar h1 {
+    font-size: 13px; font-weight: bold; letter-spacing: 2px;
+    color: var(--accent); white-space: nowrap; flex-shrink: 0;
+  }
+  #vw-race-pill { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
+  #vw-clock { font-size: 16px; font-weight: bold; color: var(--accent2); letter-spacing: 2px; margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+
+  /* ── Main layout ── */
+  #viewer-main { display: flex; flex: 1; overflow: hidden; min-width: 0; }
+  #viewer-map-wrap { flex: 1; position: relative; min-width: 0; }
   #viewer-map { width: 100%; height: 100%; }
-  #viewer-lb-wrap { width: 320px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Leaderboard sidebar ── */
+  #viewer-lb-wrap {
+    width: clamp(260px, 30vw, 360px);
+    background: var(--surface); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+  }
   #viewer-sort-bar { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .v-sort-btn { font-size: 10px; padding: 2px 8px; }
   .v-sort-btn.active { border-color: var(--accent); color: var(--accent); }
-  .v-lb-head { font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase;
-    display: grid; grid-template-columns: 24px 28px 1fr 52px 50px;
-    gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; }
-  #viewer-lb-body { flex: 1; overflow-y: auto; }
-  .v-lb-row { display: grid; grid-template-columns: 24px 28px 1fr 52px 50px;
-    gap: 4px; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+
+  /* Leaderboard grid — named areas so responsive override is clean */
+  .v-lb-cols { grid-template-columns: 22px 28px 1fr 50px 52px; }
+  .v-lb-head {
+    font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase;
+    display: grid; gap: 4px; padding: 4px 8px;
+    border-bottom: 1px solid var(--border); background: var(--surface2); flex-shrink: 0;
+  }
+  #viewer-lb-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .v-lb-row {
+    display: grid; gap: 4px; padding: 5px 8px;
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
   .v-lb-row.alert-row { animation: blink 1.2s infinite; }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
-  /* Mobile: stack layout */
+
+  /* ── Mobile: stack map & leaderboard ── */
   #view-toggle { display: none; }
+
   @media (max-width: 700px) {
-    #viewer-lb-wrap { display: none; width: 100%; border-left: none; }
+    #viewer-topbar h1 { display: none; }
+    #vw-clock { font-size: 13px; letter-spacing: 1px; }
+    #viewer-lb-wrap { display: none; width: 100%; border-left: none; flex-shrink: unset; }
     #view-toggle { display: flex; }
-    #viewer-map-wrap { display: block; }
     body.lb-mode #viewer-map-wrap { display: none; }
     body.lb-mode #viewer-lb-wrap { display: flex; width: 100%; }
+    /* Narrower columns on small screens: drop the pace column or shrink */
+    .v-lb-cols { grid-template-columns: 20px 26px 1fr 46px 44px; }
+    .v-lb-row, .v-lb-head { padding: 4px 6px; font-size: 11px; gap: 3px; }
   }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
   .tracker-icon-alert { animation: blink 1s infinite; }
   .leaflet-div-icon { background: none; border: none; }
 </style>
@@ -64,7 +95,7 @@
       <button class="v-sort-btn" data-sort="name" onclick="VW.setSort('name')">NAME</button>
       <button class="v-sort-btn" data-sort="heat" onclick="VW.setSort('heat')">HEAT</button>
     </div>
-    <div class="v-lb-head">
+    <div class="v-lb-head v-lb-cols">
       <span>#</span><span>BIB</span><span>NAME</span><span>PROGRESS</span><span>PACE</span>
     </div>
     <div id="viewer-lb-body"></div>

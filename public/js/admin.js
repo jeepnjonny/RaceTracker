@@ -13,6 +13,7 @@ const TABS = [
   { id: 'infra',        label: 'INFRASTRUCTURE' },
   { id: 'users',        label: 'USERS' },
   { id: 'settings',     label: 'SETTINGS' },
+  { id: 'logs',         label: 'LOGS' },
 ];
 let currentTab = 'races';
 
@@ -43,10 +44,13 @@ function showTab(id) {
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function handleWS(msg) {
   if (msg.type === 'mqtt_status') updateMqttPill(msg.data);
+  if (msg.type === 'aprs_status') updateAprsPill(msg.data);
   if (msg.type === 'tracker_info') refreshInfra();
   if (msg.type === 'init') {
     if (msg.data.mqtt) updateMqttPill(msg.data.mqtt);
+    if (msg.data.aprs) updateAprsPill(msg.data.aprs);
   }
+  if (msg.type === 'log_entry' && currentTab === 'logs') appendLogEntry(msg.data);
 }
 
 function updateMqttPill(status) {
@@ -83,6 +87,7 @@ function renderTab() {
     case 'infra':     el.innerHTML = renderInfraTab(); refreshInfra(); break;
     case 'users':     el.innerHTML = renderUsersTab(); loadUsers(); break;
     case 'settings':  el.innerHTML = renderSettingsTab(); bindSettingsTab(); break;
+    case 'logs':      el.innerHTML = renderLogsTab(); bindLogsTab(); break;
   }
 }
 
@@ -191,7 +196,9 @@ async function openRaceModal(id) {
   document.getElementById('rm-date').value           = race?.date || new Date().toISOString().split('T')[0];
   document.getElementById('rm-time-format').value    = race?.time_format || '24h';
   document.getElementById('rm-missing-timer').value  = Math.round((race?.missing_timer || 3600) / 60);
-  document.getElementById('rm-geofence').value       = race?.geofence_radius || 15;
+  document.getElementById('rm-geofence').value            = race?.geofence_radius || 15;
+  document.getElementById('rm-checkpoint-radius').value   = race?.checkpoint_radius || 50;
+  document.getElementById('rm-speed-units').value         = race?.speed_units || 'min_mile';
   document.getElementById('rm-off-course').value     = race?.off_course_distance || 100;
   document.getElementById('rm-stopped').value        = Math.round((race?.stopped_time || 600) / 60);
   document.getElementById('rm-feat-missing').checked    = !!(race?.feat_missing   ?? 1);
@@ -220,6 +227,8 @@ async function saveRace() {
     time_format:         document.getElementById('rm-time-format').value,
     missing_timer:       parseInt(document.getElementById('rm-missing-timer').value) * 60,
     geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
+    checkpoint_radius:   parseInt(document.getElementById('rm-checkpoint-radius').value),
+    speed_units:         document.getElementById('rm-speed-units').value,
     off_course_distance: parseInt(document.getElementById('rm-off-course').value),
     stopped_time:        parseInt(document.getElementById('rm-stopped').value) * 60,
     feat_missing:        document.getElementById('rm-feat-missing').checked    ? 1 : 0,
@@ -1152,6 +1161,7 @@ function renderPersonnelTab() {
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="primary" onclick="openPersonnelModal()">+ ADD PERSON</button>
       <button onclick="showPersonnelCsvPanel()">CSV IMPORT</button>
+      <button class="danger" onclick="clearAllPersonnel()">DELETE ALL</button>
     </div>
     <div id="pers-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">
       <div class="text-dim" style="font-size:11px;margin-bottom:6px">Columns: name, station_name, tracker_id, phone</div>
@@ -1257,11 +1267,16 @@ async function savePersonnel() {
 }
 
 async function deletePersonnel(id) {
-  if (!confirm('Delete this person?')) return;
   await RT.del(`/api/races/${selectedRaceId}/personnel/${id}`);
   await loadPersonnel();
 }
 
+async function clearAllPersonnel() {
+  if (!confirm('Delete ALL personnel from this race? This cannot be undone.')) return;
+  const res = await RT.del(`/api/races/${selectedRaceId}/personnel`);
+  if (res.ok) { await loadPersonnel(); RT.toast(`Cleared ${res.deleted} personnel`, 'ok'); }
+  else RT.toast(res.error || 'Failed', 'warn');
+}
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 function renderInfraTab() {
@@ -1360,7 +1375,7 @@ async function deleteUser(id) {
 function renderSettingsTab() {
   return `
   <div class="card">
-    <h3>MQTT / DATA SOURCE</h3>
+    <h3>MESHTASTIC / MQTT</h3>
     <div class="form-row">
       <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
       <div class="form-group">
@@ -1394,18 +1409,58 @@ function renderSettingsTab() {
       <label for="s-mqtt-diagnostic">Diagnostic mode — log all topics to server console for 60s on connect</label>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="primary" onclick="saveSettings()">SAVE</button>
+      <button class="primary" onclick="saveMqttSettings()">SAVE</button>
       <button onclick="testMqtt()" id="s-mqtt-test-btn">TEST CONNECTION</button>
       <span id="s-mqtt-status" style="font-size:11px;align-self:center;color:var(--text3)"></span>
     </div>
   </div>
+
+  <div class="card">
+    <h3>APRS-IS</h3>
+    <div class="checkbox-row" style="margin-bottom:10px">
+      <input type="checkbox" id="s-aprs-enabled" onchange="updateAprsFilterPreview()">
+      <label for="s-aprs-enabled" style="font-size:12px">Enable APRS-IS data source</label>
+      <span id="aprs-pill" class="pill pill-idle" style="margin-left:8px;font-size:10px">OFFLINE</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>CALLSIGN</label><input id="s-aprs-callsign" placeholder="K7SWI" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="form-group"><label>PASSCODE <span class="text-dim">(-1 = read-only)</span></label><input id="s-aprs-passcode" placeholder="-1" value="-1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>SERVER</label><input id="s-aprs-server" placeholder="rotate.aprs2.net"></div>
+      <div class="form-group"><label>PORT</label><input id="s-aprs-port" type="number" value="14580"></div>
+    </div>
+    <div style="margin:8px 0 4px">
+      <label style="font-size:11px;letter-spacing:1px;color:var(--text3)">SERVER FILTER</label>
+    </div>
+    <div style="display:flex;gap:16px;margin-bottom:6px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+        <input type="radio" name="aprs-filter" id="s-aprs-filter-location" value="location" onchange="updateAprsFilterPreview()" checked>
+        By location <span class="text-dim">(auto-compute center + radius of course)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+        <input type="radio" name="aprs-filter" id="s-aprs-filter-callsign" value="callsign" onchange="updateAprsFilterPreview()">
+        By callsign <span class="text-dim">(auto-collect tracker IDs from participants &amp; personnel)</span>
+      </label>
+    </div>
+    <div style="font-size:10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-family:monospace;color:var(--accent4)" id="aprs-filter-preview">
+      Previewing filter…
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="primary" onclick="saveAprsSettings()">SAVE</button>
+      <button onclick="connectAprs()" id="s-aprs-connect-btn">CONNECT</button>
+      <button onclick="disconnectAprs()" class="danger">DISCONNECT</button>
+      <span id="s-aprs-status" style="font-size:11px;align-self:center;color:var(--text3)"></span>
+    </div>
+  </div>
+
   <div class="card">
     <h3>OPENWEATHER</h3>
     <div class="form-group" style="max-width:400px">
       <label>API KEY</label>
       <input id="settings-weather-key" placeholder="Paste OpenWeather API key here">
     </div>
-    <button class="primary" onclick="saveSettings()" style="margin-top:6px">SAVE</button>
+    <button class="primary" onclick="saveWeatherSettings()" style="margin-top:6px">SAVE</button>
   </div>`;
 }
 
@@ -1419,22 +1474,35 @@ function updateMqttPortDefault() {
 }
 
 async function bindSettingsTab() {
-  const res = await RT.get('/api/settings');
-  if (!res.ok) return;
-  const s = res.data;
-  document.getElementById('s-mqtt-host').value       = s.mqtt_host || '';
-  document.getElementById('s-mqtt-protocol').value   = s.mqtt_protocol || 'tcp';
-  document.getElementById('s-mqtt-port').value       = s.mqtt_port || s.mqtt_port_ws || (s.mqtt_protocol === 'ws' ? '9001' : '1883');
-  document.getElementById('s-mqtt-user').value       = s.mqtt_user || '';
-  document.getElementById('s-mqtt-pass').value       = s.mqtt_pass || '';
-  document.getElementById('s-mqtt-region').value     = s.mqtt_region || '';
-  document.getElementById('s-mqtt-channel').value    = s.mqtt_channel || '';
-  document.getElementById('s-mqtt-psk').value        = s.mqtt_psk || '';
+  const [sRes, aprsRes] = await Promise.all([RT.get('/api/settings'), RT.get('/api/aprs/status')]);
+  if (!sRes.ok) return;
+  const s = sRes.data;
+
+  document.getElementById('s-mqtt-host').value         = s.mqtt_host || '';
+  document.getElementById('s-mqtt-protocol').value     = s.mqtt_protocol || 'tcp';
+  document.getElementById('s-mqtt-port').value         = s.mqtt_port || s.mqtt_port_ws || (s.mqtt_protocol === 'ws' ? '9001' : '1883');
+  document.getElementById('s-mqtt-user').value         = s.mqtt_user || '';
+  document.getElementById('s-mqtt-pass').value         = s.mqtt_pass || '';
+  document.getElementById('s-mqtt-region').value       = s.mqtt_region || '';
+  document.getElementById('s-mqtt-channel').value      = s.mqtt_channel || '';
+  document.getElementById('s-mqtt-psk').value          = s.mqtt_psk || '';
   document.getElementById('s-mqtt-diagnostic').checked = s.mqtt_diagnostic === '1';
+
+  document.getElementById('s-aprs-enabled').checked  = s.aprs_enabled === '1';
+  document.getElementById('s-aprs-callsign').value   = s.aprs_callsign || '';
+  document.getElementById('s-aprs-passcode').value   = s.aprs_passcode || '-1';
+  document.getElementById('s-aprs-server').value     = s.aprs_server || 'rotate.aprs2.net';
+  document.getElementById('s-aprs-port').value       = s.aprs_port || '14580';
+  const filterType = s.aprs_filter_type || 'location';
+  document.getElementById(`s-aprs-filter-${filterType}`).checked = true;
+
   document.getElementById('settings-weather-key').value = s.weather_api_key || '';
+
+  if (aprsRes.ok) updateAprsPill(aprsRes.data);
+  await updateAprsFilterPreview();
 }
 
-async function saveSettings() {
+async function saveMqttSettings() {
   const res = await RT.put('/api/settings', {
     mqtt_host:       document.getElementById('s-mqtt-host').value.trim() || null,
     mqtt_protocol:   document.getElementById('s-mqtt-protocol').value,
@@ -1445,11 +1513,35 @@ async function saveSettings() {
     mqtt_channel:    document.getElementById('s-mqtt-channel').value.trim() || null,
     mqtt_psk:        document.getElementById('s-mqtt-psk').value.trim() || null,
     mqtt_diagnostic: document.getElementById('s-mqtt-diagnostic').checked ? '1' : '0',
-    weather_api_key: document.getElementById('settings-weather-key').value.trim() || null,
   });
-  if (res.ok) RT.toast('Settings saved', 'ok');
+  if (res.ok) RT.toast('MQTT settings saved', 'ok');
   else RT.toast(res.error, 'warn');
 }
+
+async function saveAprsSettings() {
+  const filterType = document.querySelector('input[name="aprs-filter"]:checked')?.value || 'location';
+  const res = await RT.put('/api/settings', {
+    aprs_enabled:     document.getElementById('s-aprs-enabled').checked ? '1' : '0',
+    aprs_callsign:    document.getElementById('s-aprs-callsign').value.trim().toUpperCase() || null,
+    aprs_passcode:    document.getElementById('s-aprs-passcode').value.trim() || '-1',
+    aprs_server:      document.getElementById('s-aprs-server').value.trim() || 'rotate.aprs2.net',
+    aprs_port:        document.getElementById('s-aprs-port').value || '14580',
+    aprs_filter_type: filterType,
+  });
+  if (res.ok) RT.toast('APRS-IS settings saved', 'ok');
+  else RT.toast(res.error, 'warn');
+}
+
+async function saveWeatherSettings() {
+  const res = await RT.put('/api/settings', {
+    weather_api_key: document.getElementById('settings-weather-key').value.trim() || null,
+  });
+  if (res.ok) RT.toast('Weather settings saved', 'ok');
+  else RT.toast(res.error, 'warn');
+}
+
+// kept for backward compat (MQTT test calls it)
+async function saveSettings() { await saveMqttSettings(); }
 
 async function testMqtt() {
   const btn = document.getElementById('s-mqtt-test-btn');
@@ -1457,7 +1549,7 @@ async function testMqtt() {
   btn.disabled = true;
   status.textContent = 'Testing...';
   status.style.color = 'var(--text3)';
-  await saveSettings();
+  await saveMqttSettings();
   const res = await RT.post('/api/settings/mqtt-test', {});
   btn.disabled = false;
   if (res.ok && res.data?.connected) {
@@ -1467,6 +1559,67 @@ async function testMqtt() {
     status.textContent = '✗ Failed';
     status.style.color = 'var(--accent3)';
   }
+}
+
+function updateAprsPill(status) {
+  // Settings-tab pill
+  const pill = document.getElementById('aprs-pill');
+  if (pill) {
+    if (status.connected) {
+      pill.className = 'pill pill-ok pill-pulse';
+      pill.textContent = 'LIVE';
+    } else {
+      pill.className = 'pill pill-idle';
+      pill.textContent = 'OFFLINE';
+    }
+  }
+  // Topbar pill (only visible when connected)
+  const topPill = document.getElementById('aprs-topbar-pill');
+  if (topPill) {
+    topPill.style.display = status.connected ? '' : 'none';
+    topPill.className = status.connected ? 'pill pill-ok pill-pulse' : 'pill pill-idle';
+    topPill.textContent = 'APRS LIVE';
+  }
+}
+
+async function updateAprsFilterPreview() {
+  const el = document.getElementById('aprs-filter-preview');
+  if (!el) return;
+  const type = document.querySelector('input[name="aprs-filter"]:checked')?.value || 'location';
+  el.textContent = 'Computing…';
+  const res = await RT.get(`/api/aprs/filter-preview?type=${type}`);
+  if (res.ok) {
+    el.textContent = res.filter
+      ? `#filter ${res.filter}`
+      : '(no active race or track data — no filter will be applied)';
+  } else {
+    el.textContent = 'Error computing filter';
+  }
+}
+
+async function connectAprs() {
+  const btn = document.getElementById('s-aprs-connect-btn');
+  const status = document.getElementById('s-aprs-status');
+  btn.disabled = true;
+  status.textContent = 'Connecting…';
+  await saveAprsSettings();
+  const res = await RT.post('/api/aprs/connect', {});
+  btn.disabled = false;
+  if (res.ok && res.data?.connected) {
+    status.textContent = '✓ Connected';
+    status.style.color = 'var(--accent2)';
+    updateAprsPill(res.data);
+  } else {
+    status.textContent = '✗ Not connected yet — check logs';
+    status.style.color = 'var(--accent3)';
+  }
+}
+
+async function disconnectAprs() {
+  await RT.post('/api/aprs/disconnect', {});
+  updateAprsPill({ connected: false });
+  const status = document.getElementById('s-aprs-status');
+  if (status) { status.textContent = 'Disconnected'; status.style.color = 'var(--text3)'; }
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -1488,5 +1641,83 @@ document.addEventListener('keydown', e => {
 document.addEventListener('change', e => {
   if (e.target.id === 'hm-color' || e.target.id === 'hm-shape') updateHeatPreview();
 });
+
+// ── Logs Tab ──────────────────────────────────────────────────────────────────
+const LOG_CHANNELS = ['mqtt', 'aprs', 'race', 'system', 'console'];
+const LOG_LEVEL_COLORS = { info: 'var(--text)', warn: '#d2a679', error: '#f78166', debug: 'var(--text3)' };
+let logsChannel = 'mqtt';
+let logsPaused = false;
+
+function renderLogsTab() {
+  return `
+  <div class="card" style="padding:12px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <span style="font-size:11px;letter-spacing:1px;color:var(--text3)">CHANNEL</span>
+      ${LOG_CHANNELS.map(c => `<button id="log-ch-${c}" class="log-ch-btn${c===logsChannel?' active':''}" onclick="setLogChannel('${c}')">${c.toUpperCase()}</button>`).join('')}
+      <div style="flex:1"></div>
+      <button id="log-pause-btn" onclick="toggleLogPause()" style="font-size:10px;padding:3px 10px">${logsPaused?'RESUME':'PAUSE'}</button>
+      <button onclick="clearLogView()" style="font-size:10px;padding:3px 10px">CLEAR VIEW</button>
+      <button onclick="loadLogs()" style="font-size:10px;padding:3px 10px">REFRESH</button>
+    </div>
+    <div id="log-stream" style="font-family:monospace;font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;height:520px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+  </div>`;
+}
+
+function bindLogsTab() {
+  loadLogs();
+}
+
+async function loadLogs() {
+  const res = await RT.get(`/api/logs?channel=${logsChannel}&limit=500`);
+  if (!res.ok) return;
+  const el = document.getElementById('log-stream');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const entry of res.data) el.appendChild(buildLogRow(entry));
+  el.scrollTop = el.scrollHeight;
+}
+
+function buildLogRow(entry) {
+  const d = new Date(entry.ts * 1000);
+  const time = d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const color = LOG_LEVEL_COLORS[entry.level] || 'var(--text)';
+  const row = document.createElement('div');
+  row.style.cssText = `display:flex;gap:8px;padding:2px 4px;border-radius:3px;line-height:1.5`;
+  row.innerHTML = `<span style="color:var(--text3);min-width:64px">${time}</span>`
+    + `<span style="color:var(--accent4);min-width:48px">${(entry.level||'info').toUpperCase()}</span>`
+    + `<span style="color:${color};word-break:break-all">${entry.msg}</span>`;
+  return row;
+}
+
+function appendLogEntry(entry) {
+  if (logsPaused) return;
+  if (entry.channel !== logsChannel) return;
+  const el = document.getElementById('log-stream');
+  if (!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  el.appendChild(buildLogRow(entry));
+  if (atBottom) el.scrollTop = el.scrollHeight;
+  // Trim to 1000 rows in view
+  while (el.children.length > 1000) el.removeChild(el.firstChild);
+}
+
+function setLogChannel(ch) {
+  logsChannel = ch;
+  document.querySelectorAll('.log-ch-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`log-ch-${ch}`);
+  if (btn) btn.classList.add('active');
+  loadLogs();
+}
+
+function toggleLogPause() {
+  logsPaused = !logsPaused;
+  const btn = document.getElementById('log-pause-btn');
+  if (btn) btn.textContent = logsPaused ? 'RESUME' : 'PAUSE';
+}
+
+function clearLogView() {
+  const el = document.getElementById('log-stream');
+  if (el) el.innerHTML = '';
+}
 
 init();

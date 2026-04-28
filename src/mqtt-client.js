@@ -5,6 +5,7 @@ const protobuf = require('protobufjs');
 const path = require('path');
 const db = require('./db');
 const geo = require('./geo');
+const logger = require('./logger');
 
 let protoRoot = null;
 let mqttClient = null;
@@ -181,10 +182,16 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
   for (const station of stations) {
     if (!station.lat || !station.lon) continue;
     const dist = geo.haversine(lat, lon, station.lat, station.lon);
-    const inside = dist <= race.geofence_radius;
-    console.log(`[geo] p=${participant.name}(${participant.status}) stn=${station.name}(${station.type}) dist=${Math.round(dist)}m radius=${race.geofence_radius}m inside=${inside}`);
+    const radius = ['start', 'finish', 'start_finish'].includes(station.type)
+      ? (race.geofence_radius || 15)
+      : (race.checkpoint_radius || 50);
+    const inside = dist <= radius;
+    console.log(`[geo] p=${participant.name}(${participant.status}) stn=${station.name}(${station.type}) dist=${Math.round(dist)}m radius=${radius}m inside=${inside}`);
     const arriveKey = `${participant.id}_${station.id}_arrive`;
     const departKey = `${participant.id}_${station.id}_depart`;
+
+    const autoStart = race.feat_auto_start ?? 1;
+    const autoLog   = race.feat_auto_log   ?? 1;
 
     if (inside && !recentGeofenceEvents.has(arriveKey)) {
       recentGeofenceEvents.set(arriveKey, timestamp);
@@ -194,22 +201,15 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       let statusSql = null;
       let statusArgs = null;
 
-      const autoStart = race.feat_auto_start ?? 1;
-      const autoLog   = race.feat_auto_log   ?? 1;
-
-      if (station.type === 'start' && participant.status === 'dns' && autoStart) {
-        eventType = 'start';
-        statusSql = "UPDATE participants SET status='active', start_time=? WHERE id=?";
-        statusArgs = [timestamp, participant.id];
+      if (station.type === 'start' && participant.status === 'dns') {
+        // start fires on depart, not arrive — arriveKey already set above
       } else if (station.type === 'finish' && participant.status === 'active' && autoStart) {
         eventType = 'finish';
         statusSql = "UPDATE participants SET status='finished', finish_time=? WHERE id=?";
         statusArgs = [timestamp, participant.id];
       } else if (station.type === 'start_finish') {
-        if (participant.status === 'dns' && autoStart) {
-          eventType = 'start';
-          statusSql = "UPDATE participants SET status='active', start_time=? WHERE id=?";
-          statusArgs = [timestamp, participant.id];
+        if (participant.status === 'dns') {
+          // start fires on depart, not arrive — arriveKey already set above
         } else if (participant.status === 'active' && autoStart) {
           const hasTurnaround = db.prepare(`
             SELECT 1 FROM events
@@ -235,6 +235,7 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
         const has_turnaround = station.type === 'turnaround' ||
           !!(db.prepare(`SELECT 1 FROM events WHERE participant_id=? AND race_id=? AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround') LIMIT 1`)
             .get(participant.id, race.id, race.id));
+        logger.log('race', 'info', `${eventType.toUpperCase()} — ${participant.name} (#${participant.bib}) at ${station.name}`);
         broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp, has_turnaround });
       }
 
@@ -242,10 +243,20 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       recentGeofenceEvents.set(departKey, timestamp);
       setTimeout(() => recentGeofenceEvents.delete(departKey), 30000);
 
-      const noDepart = new Set(['start', 'finish', 'start_finish']);
-      if (!noDepart.has(station.type)) {
+      const isStartStation = station.type === 'start' ||
+        (station.type === 'start_finish' && participant.status === 'dns');
+
+      if (isStartStation && participant.status === 'dns' && autoStart) {
+        db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
+          .run(race.id, participant.id, 'start', station.id, timestamp);
+        db.prepare("UPDATE participants SET status='active', start_time=? WHERE id=?").run(timestamp, participant.id);
+        console.log(`[geo] START fired on depart: p=${participant.name} ts=${timestamp}`);
+        logger.log('race', 'info', `START — ${participant.name} (#${participant.bib}) departed ${station.name}`);
+        broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'start', stationId: station.id, timestamp, has_turnaround: false });
+      } else if (!['start', 'finish', 'start_finish'].includes(station.type)) {
         db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
           .run(race.id, participant.id, 'aid_depart', station.id, timestamp);
+        logger.log('race', 'info', `AID_DEPART — ${participant.name} (#${participant.bib}) left ${station.name}`);
         broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'aid_depart', stationId: station.id, timestamp });
       }
     }
@@ -426,29 +437,30 @@ function connect(config) {
     password: config.pass || undefined,
     reconnectPeriod: 5000,
   };
-  console.log(`[mqtt] Connecting to ${url} as ${config.user || '(anonymous)'}`);
+  const mqttLog = (level, msg) => { console.log(`[mqtt] ${msg}`); logger.log('mqtt', level, msg); };
+  mqttLog('info', `Connecting to ${url} as ${config.user || '(anonymous)'}`);
   mqttClient = mqtt.connect(url, opts);
 
   mqttClient.on('connect', () => {
-    console.log(`[mqtt] Connected to ${url}`);
+    mqttLog('info', `Connected to ${url}`);
     // Subscribe to both JSON and encrypted protobuf topic patterns simultaneously
     const jsonTopic = `msh/${config.region}/2/json/${config.channel}/#`;
     const encTopic  = `msh/${config.region}/2/e/${config.channel}/#`;
     [jsonTopic, encTopic].forEach(t => {
       mqttClient.subscribe(t, err => {
-        if (err) console.error(`[mqtt] Subscribe error ${t}:`, err.message);
-        else console.log(`[mqtt] Subscribed to ${t}`);
+        if (err) mqttLog('error', `Subscribe error ${t}: ${err.message}`);
+        else mqttLog('info', `Subscribed to ${t}`);
       });
     });
     // Diagnostic catch-all: log every topic for 60s to help identify traffic
     if (config.diagnostic) {
       mqttClient.subscribe('#', err => {
-        if (!err) console.log('[mqtt] Diagnostic: subscribed to # (all topics for 60s)');
+        if (!err) mqttLog('info', 'Diagnostic: subscribed to # (all topics for 60s)');
       });
       setTimeout(() => {
         if (mqttClient?.connected) {
           mqttClient.unsubscribe('#');
-          console.log('[mqtt] Diagnostic: unsubscribed from #');
+          mqttLog('info', 'Diagnostic: unsubscribed from #');
         }
       }, 60000);
     }
@@ -458,7 +470,7 @@ function connect(config) {
   mqttClient.on('message', async (topic, payload) => {
     if (config.diagnostic) {
       const preview = payload.slice(0, 120).toString('utf8').replace(/[^\x20-\x7e]/g, '.');
-      console.log(`[mqtt] topic=${topic} len=${payload.length} data=${preview}`);
+      mqttLog('debug', `topic=${topic} len=${payload.length} data=${preview}`);
     }
     try {
       // Detect format from topic path — /2/e/ = encrypted protobuf, /2/json/ = JSON
@@ -467,19 +479,22 @@ function connect(config) {
       } else {
         const msg = JSON.parse(payload.toString());
         processJsonMessage(msg);
+        if (msg.type === 'position' || msg.type === 'nodeinfo')
+          mqttLog('info', `${msg.type} from ${msg.sender || msg.from} on ${topic}`);
       }
       broadcast('mqtt_raw', { topic, ts: Date.now() });
     } catch (e) {
-      if (config.diagnostic) console.warn(`[mqtt] Parse error on ${topic}: ${e.message}`);
+      if (config.diagnostic) mqttLog('warn', `Parse error on ${topic}: ${e.message}`);
     }
   });
 
   mqttClient.on('error', err => {
-    console.error('[mqtt] Error:', err.message);
+    mqttLog('error', `Error: ${err.message}`);
     broadcast('mqtt_status', { connected: false, error: err.message });
   });
 
   mqttClient.on('close', () => {
+    mqttLog('info', 'Connection closed');
     broadcast('mqtt_status', { connected: false });
   });
 }
@@ -514,4 +529,4 @@ function invalidateRouteCache(raceId) {
   routeCache.delete(raceId);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition };

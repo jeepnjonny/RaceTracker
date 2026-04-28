@@ -92,6 +92,7 @@ function sendInit(ws, user) {
     const classes = db.prepare('SELECT * FROM classes WHERE race_id=?').all(raceId);
     const registry = db.prepare('SELECT * FROM tracker_registry').all();
     const mqttMod = require('./mqtt-client');
+    const aprsMod = require('./aprs-client');
     const trackPoints = getTrackPointsForRace(race);
 
     send(ws, 'init', {
@@ -103,6 +104,7 @@ function sendInit(ws, user) {
       registry,
       trackPoints,
       mqtt: mqttMod.getStatus(),
+      aprs: aprsMod.getStatus(),
     });
   } catch (e) {
     console.error('[ws] sendInit error:', e.message);

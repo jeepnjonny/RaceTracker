@@ -32,6 +32,7 @@ function csvParse(text) {
 }
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
+const aprsClient = require('../aprs-client');
 const router = express.Router({ mergeParams: true });
 
 const stmtHeat    = db.prepare('SELECT name, color, shape FROM heats WHERE id=?');
@@ -80,6 +81,7 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
            class_id || null, age || null, phone || null, emergency_contact || null);
     const p = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(result.lastInsertRowid));
     wsManager.broadcast({ type: 'participant_update', data: { action: 'add', participant: p } });
+    aprsClient.notifyRosterChange();
     res.json({ ok: true, data: p });
   } catch (e) {
     res.status(409).json({ ok: false, error: 'Bib number already exists in this race' });
@@ -101,6 +103,7 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
   db.prepare(`UPDATE participants SET ${sets} WHERE id=?`).run(...Object.values(updates), p.id);
   const updated = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(p.id));
   wsManager.broadcast({ type: 'participant_update', data: { action: 'update', participant: updated } });
+  aprsClient.notifyRosterChange();
   res.json({ ok: true, data: updated });
 });
 

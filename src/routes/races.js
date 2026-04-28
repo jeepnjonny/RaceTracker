@@ -7,10 +7,10 @@ const mqttClient = require('../mqtt-client');
 const router = express.Router();
 
 const RACE_FIELDS = [
-  'name','date','status','time_format','geofence_radius','off_course_distance',
+  'name','date','status','time_format','geofence_radius','checkpoint_radius','off_course_distance',
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
   'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id','race_format',
-  'feat_missing','feat_auto_log','feat_auto_start','feat_off_course','feat_stopped',
+  'feat_missing','feat_auto_log','feat_auto_start','feat_off_course','feat_stopped','speed_units',
 ];
 
 router.get('/', requireAuth, (req, res) => {
