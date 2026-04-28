@@ -624,7 +624,6 @@ async function autoCreateStartFinish() {
       toCreate.push({ name: 'Finish', type: 'finish', lat: pts[pts.length-1][0], lon: pts[pts.length-1][1] });
   }
   if (!toCreate.length) return;
-  if (!confirm(`Auto-create ${toCreate.map(s=>s.name).join(' and ')} station(s) for "${race?.name}" at the track start/end coordinates?`)) return;
   for (const s of toCreate) {
     await RT.post(`/api/races/${selectedRaceId}/stations`, s);
   }
