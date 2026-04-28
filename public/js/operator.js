@@ -174,7 +174,7 @@ async function setupWeatherLayers(owmKey) {
     overlays['&#127777; Temperature']   = owm('temp_new', 0.5);
   }
   if (Object.keys(overlays).length) {
-    weatherLayersControl = L.control.layers({}, overlays, { collapsed: true, position: 'topright' }).addTo(leafletMap);
+    weatherLayersControl = L.control.layers({}, overlays, { collapsed: true, position: 'bottomleft' }).addTo(leafletMap);
   }
 }
 

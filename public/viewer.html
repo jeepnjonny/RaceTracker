@@ -71,6 +71,21 @@
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
   .tracker-icon-alert { animation: blink 1s infinite; }
   .leaflet-div-icon { background: none; border: none; }
+  /* Leaflet controls themed to match app */
+  .leaflet-control-layers {
+    background: var(--surface) !important; border: 1px solid var(--border) !important;
+    border-radius: 6px !important; box-shadow: none !important;
+    color: var(--text) !important; font-family: var(--font) !important; font-size: 11px !important;
+  }
+  .leaflet-control-layers-toggle { background-color: var(--surface2) !important; }
+  .leaflet-control-layers-expanded { padding: 8px 10px !important; }
+  .leaflet-control-layers-separator { border-top: 1px solid var(--border) !important; }
+  .leaflet-control-layers label { color: var(--text2) !important; font-size: 11px !important; margin: 2px 0 !important; }
+  .leaflet-control-zoom a {
+    background: var(--surface) !important; border-color: var(--border) !important;
+    color: var(--text) !important; font-family: var(--font) !important;
+  }
+  .leaflet-control-zoom a:hover { background: var(--surface2) !important; }
 </style>
 </head>
 <body>
