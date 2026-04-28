@@ -23,11 +23,20 @@ function nodeIdHex(num) {
   return '!' + (num >>> 0).toString(16).padStart(8, '0');
 }
 
-// Derive AES-128 key from PSK base64
+// Meshtastic default channel key — used when PSK is AQ== (single byte 0x01)
+// Defined in firmware channel.pb.h; NOT just 0x01 padded with zeros
+const MESH_DEFAULT_KEY = Buffer.from([
+  0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59,
+  0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01,
+]);
+
 function derivePskKey(pskB64) {
   const raw = Buffer.from(pskB64, 'base64');
-  const key = Buffer.alloc(16, 0);
-  raw.copy(key, 0, 0, Math.min(raw.length, 16));
+  if (raw.length === 1 && raw[0] === 1) return MESH_DEFAULT_KEY;
+  // 32-byte PSK → AES-256, otherwise AES-128
+  const keyLen = raw.length >= 32 ? 32 : 16;
+  const key = Buffer.alloc(keyLen, 0);
+  raw.copy(key, 0, 0, Math.min(raw.length, keyLen));
   return key;
 }
 
