@@ -1055,23 +1055,37 @@ function renderWeatherPanel() {
 
 function renderForecastStrip() {
   if (!wxForecast?.length) return '';
-  const slots = wxForecast.slice(0, 8).map(s => {
-    const t = new Date(s.dt * 1000);
-    const label = t.toLocaleTimeString([], { hour: 'numeric', hour12: true });
+  const rows = wxForecast.slice(0, 8).map(s => {
+    const t     = new Date(s.dt * 1000);
+    const label = t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
     const icon  = s.weather?.[0]?.icon || '01d';
-    const temp  = s.main?.temp != null ? Math.round(s.main.temp) + '°' : '--';
-    const pop   = s.pop > 0.05 ? Math.round(s.pop * 100) + '%' : '';
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:48px;padding:4px 2px;border-radius:4px">
-      <div style="font-size:9px;color:var(--text3)">${label}</div>
-      <img src="https://openweathermap.org/img/wn/${icon}.png" width="32" height="32" style="margin:-4px 0">
-      <div style="font-size:11px;font-weight:bold;color:var(--text)">${temp}</div>
-      <div style="font-size:9px;color:#58a6ff;min-height:11px">${pop}</div>
-    </div>`;
+    const desc  = s.weather?.[0]?.description || '';
+    const temp  = s.main?.temp != null ? Math.round(s.main.temp) + '°F' : '--';
+    const pop   = Math.round((s.pop ?? 0) * 100) + '%';
+    const rainMm = s.rain?.['3h'] ?? s.snow?.['3h'] ?? null;
+    const vol   = rainMm != null ? (rainMm / 25.4).toFixed(2) + '"' : '—';
+    const windSpd = s.wind?.speed != null ? Math.round(s.wind.speed) + ' mph' : null;
+    const windDeg = s.wind?.deg   != null ? windDir(s.wind.deg) : '';
+    const wind  = windSpd ? `${windSpd} ${windDeg}`.trim() : '—';
+    return `
+      <div style="display:grid;grid-template-columns:60px 32px 1fr;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-size:10px;font-weight:bold;color:var(--text)">${label}</div>
+          <div style="font-size:9px;color:var(--text3);text-transform:capitalize;margin-top:1px">${desc}</div>
+        </div>
+        <img src="https://openweathermap.org/img/wn/${icon}.png" width="32" height="32">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:10px">
+          <div><span style="color:var(--text3)">Temp </span><span style="color:var(--text)">${temp}</span></div>
+          <div><span style="color:var(--text3)">Wind </span><span style="color:var(--text)">${wind}</span></div>
+          <div><span style="color:var(--text3)">Pop </span><span style="color:#58a6ff">${pop}</span></div>
+          <div><span style="color:var(--text3)">Precip </span><span style="color:#58a6ff">${vol}</span></div>
+        </div>
+      </div>`;
   }).join('');
   return `
-    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:6px">
       <div style="font-size:9px;letter-spacing:1px;color:var(--text3);margin-bottom:4px">24-HOUR FORECAST</div>
-      <div style="display:flex;gap:2px;overflow-x:auto;padding-bottom:2px">${slots}</div>
+      ${rows}
     </div>`;
 }
 
