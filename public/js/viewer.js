@@ -59,7 +59,7 @@ async function setupWeatherLayers(owmKey) {
     const frame = d.radar?.past?.slice(-1)[0];
     if (frame) overlays['&#127783; Radar'] = L.tileLayer(
       `${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
-      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxNativeZoom: 12 }
+      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxNativeZoom: 12, maxZoom: 18 }
     );
   } catch {}
   if (owmKey) {
