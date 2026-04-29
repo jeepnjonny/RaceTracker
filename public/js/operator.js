@@ -8,14 +8,13 @@ let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null, wea
 let activeWeatherOverlays = new Set(), wxPoller = null;
 let wxData = null, wxError = null, wxDataTs = 0, wxForecast = null, wxAlerts = [];
 let wxAlertPoller = null;
-let radarLayer = null, owmKey = null;
+let owmKey = null;
 let wxSetupInProgress = false;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
 
 const LAYER_LEGENDS = {
-  'Radar':         { label:'RADAR INTENSITY',  grad:'#20dc96,#00c800,#fafa00,#ff8c00,#e60000,#9900cc', ticks:['Light','Mod','Heavy','Ext'] },
-  'Precipitation': { label:'PRECIP (mm/h)',    grad:'#c8e6fa,#64b4fa,#1464d2,#00be00,#fafa00,#fa8c32,#fa3232', ticks:['0.1','1','5','25','100','140'] },
+'Precipitation': { label:'PRECIP (mm/h)',    grad:'#c8e6fa,#64b4fa,#1464d2,#00be00,#fafa00,#fa8c32,#fa3232', ticks:['0.1','1','5','25','100','140'] },
   'Clouds':        { label:'CLOUD COVER',      grad:'rgba(255,255,255,0.15),#888888',                   ticks:['0%','50%','100%'] },
   'Wind Speed':    { label:'WIND (m/s)',        grad:'#ffffff,#64c8fa,#1464d2,#00be00,#fafa00,#fa6400,#fa0000', ticks:['0','5','15','25','50','200'] },
   'Temperature':   { label:'TEMPERATURE (°F)', grad:'#820eb4,#1464d2,#20e8e8,#28b428,#f0f032,#fa8c32,#fa3232', ticks:['-4','32','59','86','104'] },
@@ -184,21 +183,8 @@ async function setupWeatherLayers(key) {
   if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
   if (weatherLegendControl) { leafletMap.removeControl(weatherLegendControl); weatherLegendControl = null; }
   activeWeatherOverlays.clear();
-  radarLayer = null;
 
   const overlays = {};
-  try {
-    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    const d = await r.json();
-    const frame = d.radar?.past?.slice(-1)[0];
-    if (frame) {
-      radarLayer = L.tileLayer(
-        `${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
-        { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxZoom: 12 }
-      );
-      overlays['&#127783; Radar'] = radarLayer;
-    }
-  } catch {}
   if (owmKey) {
     const owm = (layer, opacity) => L.tileLayer(
       `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
@@ -215,18 +201,6 @@ async function setupWeatherLayers(key) {
     weatherLegendControl.addTo(leafletMap);
   }
   wxSetupInProgress = false;
-  // Refresh RainViewer radar frame every 10 minutes
-  setInterval(refreshRadarLayer, 10 * 60 * 1000);
-}
-
-async function refreshRadarLayer() {
-  if (!radarLayer) return;
-  try {
-    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    const d = await r.json();
-    const frame = d.radar?.past?.slice(-1)[0];
-    if (frame) radarLayer.setUrl(`${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`);
-  } catch {}
 }
 
 function createWeatherLegendControl() {
