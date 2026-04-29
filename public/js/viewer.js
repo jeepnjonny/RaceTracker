@@ -33,7 +33,7 @@ async function init() {
 }
 
 function initMap() {
-  leafletMap = L.map('viewer-map', { zoomControl: true, maxZoom: 18 });
+  leafletMap = L.map('viewer-map', { zoomControl: true, maxZoom: 16 });
   markerLayer = L.layerGroup().addTo(leafletMap);
   viewerBaseTiles = {};
   for (const [name, cfg] of Object.entries(BASE_LAYERS)) {
@@ -55,7 +55,7 @@ async function setupWeatherLayers(owmKey) {
   if (owmKey) {
     const owm = (layer, opacity) => L.tileLayer(
       `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
-      { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 19, zIndex: 200 }
+      { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 16, zIndex: 200 }
     );
     overlays['&#127783; Precipitation'] = owm('precipitation_new');
     overlays['&#9729; Clouds']          = owm('clouds_new', 0.45);

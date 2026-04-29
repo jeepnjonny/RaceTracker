@@ -375,7 +375,6 @@ async function saveHeat() {
 }
 
 async function deleteHeat(id) {
-  if (!confirm('Delete this heat?')) return;
   await RT.del(`/api/races/${selectedRaceId}/heats/${id}`);
   await loadHeatsClasses();
 }
@@ -388,7 +387,6 @@ async function addClass() {
 }
 
 async function deleteClass(id) {
-  if (!confirm('Delete this class?')) return;
   await RT.del(`/api/races/${selectedRaceId}/classes/${id}`);
   await loadHeatsClasses();
 }
@@ -643,7 +641,6 @@ async function renameCourse(id) {
 }
 
 async function deleteCourse(id) {
-  if (!confirm('Delete this course file? Any races using it will lose their course assignment.')) return;
   await RT.del(`/api/courses/${id}`);
   if (selectedCourseId === id) {
     selectedCourseId = null;
@@ -739,7 +736,6 @@ async function renameCsvFile(id) {
 }
 
 async function deleteCsvFile(id) {
-  if (!confirm('Delete this CSV file?')) return;
   await RT.del(`/api/csv-files/${id}`);
   if (selectedCsvId === id) {
     selectedCsvId = null;
@@ -878,7 +874,6 @@ async function saveStation() {
 }
 
 async function deleteStation(id) {
-  if (!confirm('Delete this station?')) return;
   await RT.del(`/api/races/${selectedRaceId}/stations/${id}`);
   await loadStations();
 }
@@ -1034,7 +1029,6 @@ async function deleteParticipant(id) {
 }
 
 async function clearAllParticipants() {
-  if (!confirm(`Delete ALL participants from this race? This cannot be undone.`)) return;
   const res = await RT.del(`/api/races/${selectedRaceId}/participants`);
   if (res.ok) {
     participants = [];
@@ -1249,7 +1243,6 @@ async function deletePersonnel(id) {
 }
 
 async function clearAllPersonnel() {
-  if (!confirm('Delete ALL personnel from this race? This cannot be undone.')) return;
   const res = await RT.del(`/api/races/${selectedRaceId}/personnel`);
   if (res.ok) { await loadPersonnel(); RT.toast(`Cleared ${res.deleted} personnel`, 'ok'); }
   else RT.toast(res.error || 'Failed', 'warn');
@@ -1269,18 +1262,40 @@ function renderInfraTab() {
   </div>`;
 }
 
+let _assignNodeId = null, _assignLongName = null;
+let _infraPeople = []; // [{id, name, type, tracker_id}]
+
 async function refreshInfra() {
-  const res = await RT.get('/api/trackers');
+  const [res, ptRes, pnlRes] = await Promise.all([
+    RT.get('/api/trackers'),
+    selectedRaceId ? RT.get(`/api/races/${selectedRaceId}/participants`) : Promise.resolve({ ok: false }),
+    selectedRaceId ? RT.get(`/api/races/${selectedRaceId}/personnel`)    : Promise.resolve({ ok: false }),
+  ]);
   const el = document.getElementById('infra-list');
   if (!el || !res.ok) return;
+
+  _infraPeople = [
+    ...(ptRes.ok  ? ptRes.data.map(p  => ({ id: p.id,  name: p.name,  type: 'participant', tracker_id: p.tracker_id  })) : []),
+    ...(pnlRes.ok ? pnlRes.data.map(p => ({ id: p.id,  name: p.name,  type: 'personnel',   tracker_id: p.tracker_id  })) : []),
+  ];
+
   const trackers = res.data;
   if (!trackers.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No trackers seen yet.</div>'; return; }
   const now = Math.floor(Date.now() / 1000);
   const missingTimer = (races.find(r=>r.id===activeRaceId))?.missing_timer || 3600;
-  el.innerHTML = `<table class="data-table"><thead><tr><th>NODE ID</th><th>LONG NAME</th><th>SHORT</th><th>BATTERY</th><th>LAST SEEN</th><th>POSITION</th></tr></thead><tbody>
+
+  const assignedCol = selectedRaceId ? '<th>ASSIGNED TO</th>' : '';
+  el.innerHTML = `<table class="data-table"><thead><tr><th>NODE ID</th><th>LONG NAME</th><th>SHORT</th><th>BATTERY</th><th>LAST SEEN</th><th>POSITION</th>${assignedCol}</tr></thead><tbody>
     ${trackers.map(t => {
       const missing = t.last_seen && (now - t.last_seen) > missingTimer;
       const age = RT.timeAgo(t.last_seen);
+      let assignCell = '';
+      if (selectedRaceId) {
+        const person = _infraPeople.find(p => p.tracker_id && (p.tracker_id === t.node_id || p.tracker_id === t.long_name));
+        assignCell = person
+          ? `<td><span style="color:var(--accent2)">${person.name}</span> <span class="text-dim" style="font-size:11px">${person.type === 'participant' ? 'racer' : 'crew'}</span></td>`
+          : `<td><a href="#" style="font-size:11px;color:var(--accent4)" onclick="openAssignPicker('${t.node_id}','${(t.long_name||'').replace(/'/g,"\\'")}');return false">ASSIGN</a></td>`;
+      }
       return `<tr style="${missing?'opacity:0.45':''}">
         <td class="text-accent">${t.node_id}</td>
         <td>${t.long_name||'—'}</td>
@@ -1288,15 +1303,47 @@ async function refreshInfra() {
         <td>${t.battery_level!=null?RT.fmtBattery(t.battery_level):'—'}</td>
         <td class="${missing?'text-warn':''}">${age}</td>
         <td class="text-dim">${t.last_lat?`${t.last_lat.toFixed(4)}, ${t.last_lon.toFixed(4)}`:'—'}</td>
+        ${assignCell}
       </tr>`;
     }).join('')}
   </tbody></table>`;
 }
 
+function openAssignPicker(nodeId, longName) {
+  _assignNodeId = nodeId;
+  _assignLongName = longName;
+  const nodeEl = document.getElementById('assign-modal-node');
+  if (nodeEl) nodeEl.textContent = `Node: ${longName || nodeId}`;
+  const sel = document.getElementById('assign-person-sel');
+  if (!sel) return;
+  const unassigned = _infraPeople.filter(p => !p.tracker_id);
+  sel.innerHTML = unassigned.length
+    ? unassigned.map(p => `<option value="${p.type}:${p.id}">${p.name} (${p.type === 'participant' ? 'racer' : 'crew'})</option>`).join('')
+    : '<option value="">— No unassigned people —</option>';
+  document.getElementById('assign-modal').classList.remove('hidden');
+}
+
+async function confirmAssignTracker() {
+  const sel = document.getElementById('assign-person-sel');
+  if (!sel?.value) return;
+  const [type, idStr] = sel.value.split(':');
+  const id = parseInt(idStr);
+  const url = type === 'participant'
+    ? `/api/races/${selectedRaceId}/participants/${id}`
+    : `/api/races/${selectedRaceId}/personnel/${id}`;
+  const res = await RT.put(url, { tracker_id: _assignNodeId });
+  if (res.ok) {
+    RT.toast('Tracker assigned', 'ok');
+    closeModal('assign-modal');
+    await refreshInfra();
+  } else {
+    RT.toast(res.error || 'Assignment failed', 'warn');
+  }
+}
+
 async function purgeTrackers() {
   const hours = parseFloat(document.getElementById('purge-hours')?.value);
   if (!hours || hours <= 0) { RT.toast('Enter a valid number of hours', 'warn'); return; }
-  if (!confirm(`Delete all tracker nodes last seen more than ${hours} hour(s) ago?`)) return;
   const res = await RT.del(`/api/trackers?olderThan=${hours}`);
   if (res.ok) {
     RT.toast(`Purged ${res.deleted} node(s)`, 'ok');
@@ -1361,7 +1408,6 @@ async function saveUser() {
 }
 
 async function deleteUser(id) {
-  if (!confirm('Delete this user?')) return;
   await RT.del(`/api/users/${id}`);
   await loadUsers();
 }
@@ -1446,8 +1492,7 @@ function renderSettingsTab() {
     </div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="primary" onclick="saveAprsSettings()">SAVE</button>
-      <button onclick="connectAprs()" id="s-aprs-connect-btn">CONNECT</button>
-      <button onclick="disconnectAprs()" class="danger">DISCONNECT</button>
+      <button onclick="testAprs()" id="s-aprs-test-btn">TEST</button>
       <span id="s-aprs-status" style="font-size:12px;align-self:center;color:var(--text3)"></span>
     </div>
   </div>
@@ -1613,11 +1658,12 @@ async function updateAprsFilterPreview() {
   }
 }
 
-async function connectAprs() {
-  const btn = document.getElementById('s-aprs-connect-btn');
+async function testAprs() {
+  const btn = document.getElementById('s-aprs-test-btn');
   const status = document.getElementById('s-aprs-status');
   btn.disabled = true;
-  status.textContent = 'Connecting…';
+  status.textContent = 'Testing…';
+  status.style.color = 'var(--text3)';
   await saveAprsSettings();
   const res = await RT.post('/api/aprs/connect', {});
   btn.disabled = false;
@@ -1626,16 +1672,9 @@ async function connectAprs() {
     status.style.color = 'var(--accent2)';
     updateAprsPill(res.data);
   } else {
-    status.textContent = '✗ Not connected yet — check logs';
+    status.textContent = '✗ Not connected — check logs';
     status.style.color = 'var(--accent3)';
   }
-}
-
-async function disconnectAprs() {
-  await RT.post('/api/aprs/disconnect', {});
-  updateAprsPill({ connected: false });
-  const status = document.getElementById('s-aprs-status');
-  if (status) { status.textContent = 'Disconnected'; status.style.color = 'var(--text3)'; }
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

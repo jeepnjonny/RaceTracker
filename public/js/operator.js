@@ -160,7 +160,7 @@ async function loadTrackData() {
 
 // ── Map ───────────────────────────────────────────────────────────────────────
 function initMap() {
-  leafletMap = L.map('map', { zoomControl: true, maxZoom: 18 });
+  leafletMap = L.map('map', { zoomControl: true, maxZoom: 16 });
   markerLayer = L.layerGroup().addTo(leafletMap);
   setBaseLayer('topo');
   leafletMap.setView([39.5, -98.5], 5);
@@ -188,7 +188,7 @@ async function setupWeatherLayers(key) {
   if (owmKey) {
     const owm = (layer, opacity) => L.tileLayer(
       `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
-      { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 19, zIndex: 200 }
+      { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 16, zIndex: 200 }
     );
     overlays['&#9730; Precipitation'] = owm('precipitation_new');
     overlays['&#9729; Clouds']        = owm('clouds_new', 0.45);
