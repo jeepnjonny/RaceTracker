@@ -93,6 +93,12 @@
   <h1>&#9654; RaceTracker</h1>
   <div class="pill pill-idle" id="vw-race-pill">LOADING...</div>
   <div id="vw-clock" style="font-size:18px;font-weight:bold;color:var(--accent2);letter-spacing:2px;margin-left:auto">--:--:--</div>
+  <select id="vw-base-layer-sel" onchange="VW.setViewerBaseLayer(this.value)" style="font-size:12px;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);flex-shrink:0">
+    <option value="Topo">Topo</option>
+    <option value="Satellite">Satellite</option>
+    <option value="Street">Street</option>
+    <option value="Dark">Dark</option>
+  </select>
   <div id="view-toggle" style="gap:6px">
     <button onclick="VW.toggleView()" id="vw-toggle-btn">LEADERBOARD</button>
   </div>

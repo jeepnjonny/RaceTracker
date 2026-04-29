@@ -5,7 +5,7 @@ let leafletMap, markerLayer, routeLayer, stationMarkers = {};
 let sortBy = 'position', clockInterval;
 let fmt24 = false;
 let mapMode = true; // vs leaderboard on mobile
-let viewerLayersControl = null, viewerBaseTiles = null;
+let viewerLayersControl = null, viewerBaseTiles = null, currentViewerBaseLayer = null;
 let viewerLegendControl = null, activeViewerOverlays = new Set();
 
 const LAYER_LEGENDS = {
@@ -39,11 +39,18 @@ function initMap() {
   for (const [name, cfg] of Object.entries(BASE_LAYERS)) {
     viewerBaseTiles[name] = L.tileLayer(cfg.url, cfg.opts);
   }
-  viewerBaseTiles['Topo'].addTo(leafletMap);
-  viewerLayersControl = L.control.layers(viewerBaseTiles, {}, { collapsed: true, position: 'topright' }).addTo(leafletMap);
+  setViewerBaseLayer('Topo');
   leafletMap.setView([39.5, -98.5], 5);
   leafletMap.on('overlayadd',    e => { activeViewerOverlays.add(e.name);    updateViewerLegend(); });
   leafletMap.on('overlayremove', e => { activeViewerOverlays.delete(e.name); updateViewerLegend(); });
+}
+
+function setViewerBaseLayer(name) {
+  if (currentViewerBaseLayer) leafletMap.removeLayer(currentViewerBaseLayer);
+  currentViewerBaseLayer = viewerBaseTiles[name] || viewerBaseTiles['Topo'];
+  currentViewerBaseLayer.addTo(leafletMap);
+  const sel = document.getElementById('vw-base-layer-sel');
+  if (sel) sel.value = name;
 }
 
 async function setupWeatherLayers(owmKey) {
@@ -62,7 +69,8 @@ async function setupWeatherLayers(owmKey) {
     overlays['&#127790; Wind Speed']    = owm('wind_new');
     overlays['&#127777; Temperature']   = owm('temp_new', 0.5);
   }
-  viewerLayersControl = L.control.layers(viewerBaseTiles, overlays, { collapsed: true, position: 'topright' }).addTo(leafletMap);
+  if (Object.keys(overlays).length)
+    viewerLayersControl = L.control.layers({}, overlays, { collapsed: true, position: 'topright' }).addTo(leafletMap);
   if (Object.keys(overlays).length) {
     viewerLegendControl = L.control({ position: 'bottomright' });
     viewerLegendControl.onAdd = () => {
@@ -315,5 +323,5 @@ function startClock() {
 }
 
 init();
-return { setSort, toggleView };
+return { setSort, toggleView, setViewerBaseLayer };
 })();
