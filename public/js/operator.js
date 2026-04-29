@@ -4,9 +4,18 @@ const OP = (() => {
 let race = null, participants = {}, stations = [], heats = {}, classes = {};
 let personnel = [], messages = [];
 let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = null;
-let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null;
+let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null, weatherLegendControl = null;
+let activeWeatherOverlays = new Set(), wxRefreshTimer = null;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
+
+const LAYER_LEGENDS = {
+  'Radar':         { label:'RADAR INTENSITY',  grad:'#20dc96,#00c800,#fafa00,#ff8c00,#e60000,#9900cc', ticks:['Light','Mod','Heavy','Ext'] },
+  'Precipitation': { label:'PRECIP (mm/h)',    grad:'#c8e6fa,#64b4fa,#1464d2,#00be00,#fafa00,#fa8c32,#fa3232', ticks:['0.1','1','5','25','100','140'] },
+  'Clouds':        { label:'CLOUD COVER',      grad:'rgba(255,255,255,0.15),#888888',                   ticks:['0%','50%','100%'] },
+  'Wind Speed':    { label:'WIND (m/s)',        grad:'#ffffff,#64c8fa,#1464d2,#00be00,#fafa00,#fa6400,#fa0000', ticks:['0','5','15','25','50','200'] },
+  'Temperature':   { label:'TEMPERATURE (°F)', grad:'#820eb4,#1464d2,#20e8e8,#28b428,#f0f032,#fa8c32,#fa3232', ticks:['-4','32','59','86','104'] },
+};
 let clockInterval = null, missingCheckInterval = null, stoppedCheckInterval = null;
 let fmt24 = false;
 let editingPId = null;
@@ -59,6 +68,14 @@ function applyMessagingFlag() {
   if (!enabled && rightTab === 'msg') switchRightTab('info');
 }
 
+function applyWeatherFlag() {
+  const btn = document.getElementById('wx-tab-btn');
+  if (!btn) return;
+  const enabled = race?.weather_enabled;
+  btn.style.display = enabled ? '' : 'none';
+  if (!enabled && rightTab === 'weather') switchRightTab('info');
+}
+
 function handleInit(data) {
   if (!data.race) { updateRacePill(null); return; }
   race = data.race;
@@ -67,6 +84,7 @@ function handleInit(data) {
   updateMqttPill(data.mqtt);
   if (data.aprs) updateAprsPill(data.aprs);
   applyMessagingFlag();
+  applyWeatherFlag();
 
   heats = {}; (data.heats || []).forEach(h => heats[h.id] = h);
   classes = {}; (data.classes || []).forEach(c => classes[c.id] = c);
@@ -96,6 +114,7 @@ async function loadInitialData() {
   fmt24 = race.time_format === '24h';
   updateRacePill(race);
   applyMessagingFlag();
+  applyWeatherFlag();
 
   const [pr, sr, hr, cr, personnelR, msgR] = await Promise.all([
     RT.get(`/api/races/${race.id}/participants`),
@@ -142,6 +161,8 @@ function initMap() {
   setBaseLayer('topo');
   leafletMap.setView([39.5, -98.5], 5);
   leafletMap.on('click', onMapClick);
+  leafletMap.on('overlayadd',    e => { activeWeatherOverlays.add(e.name);    updateWeatherLegend(); });
+  leafletMap.on('overlayremove', e => { activeWeatherOverlays.delete(e.name); updateWeatherLegend(); });
 }
 
 function setBaseLayer(name) {
@@ -153,6 +174,9 @@ function setBaseLayer(name) {
 
 async function setupWeatherLayers(owmKey) {
   if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
+  if (weatherLegendControl) { leafletMap.removeControl(weatherLegendControl); weatherLegendControl = null; }
+  activeWeatherOverlays.clear();
+
   const overlays = {};
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
@@ -175,7 +199,37 @@ async function setupWeatherLayers(owmKey) {
   }
   if (Object.keys(overlays).length) {
     weatherLayersControl = L.control.layers({}, overlays, { collapsed: true, position: 'bottomleft' }).addTo(leafletMap);
+    weatherLegendControl = createWeatherLegendControl();
+    weatherLegendControl.addTo(leafletMap);
   }
+}
+
+function createWeatherLegendControl() {
+  const ctrl = L.control({ position: 'bottomright' });
+  ctrl.onAdd = () => {
+    const div = L.DomUtil.create('div', '');
+    div.id = 'wx-legend';
+    div.style.cssText = 'display:none;background:var(--surface,#161b22);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px 10px;font-family:monospace;min-width:170px;pointer-events:none';
+    L.DomEvent.disableClickPropagation(div);
+    return div;
+  };
+  return ctrl;
+}
+
+function updateWeatherLegend() {
+  const div = document.getElementById('wx-legend');
+  if (!div) return;
+  if (activeWeatherOverlays.size === 0) { div.style.display = 'none'; return; }
+  const name = [...activeWeatherOverlays].at(-1);
+  const key = Object.keys(LAYER_LEGENDS).find(k => name.includes(k));
+  if (!key) { div.style.display = 'none'; return; }
+  const spec = LAYER_LEGENDS[key];
+  const tickHtml = spec.ticks.map(t => `<span>${t}</span>`).join('');
+  div.style.display = '';
+  div.innerHTML = `
+    <div style="font-size:9px;letter-spacing:1px;color:var(--text3,#7d8590);margin-bottom:4px">${spec.label}</div>
+    <div style="height:8px;width:150px;border-radius:3px;background:linear-gradient(to right,${spec.grad});margin-bottom:3px"></div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2,#8b949e)">${tickHtml}</div>`;
 }
 
 function onMapClick(e) {
@@ -873,13 +927,75 @@ function startClock() {
 function switchRightTab(id) {
   rightTab = id;
   document.querySelectorAll('#right-panel .tab-btn').forEach((b, i) => {
-    const ids = ['info','alerts','msg','log'];
+    const ids = ['info','alerts','msg','log','weather'];
     b.classList.toggle('active', ids[i] === id);
   });
   document.querySelectorAll('#right-panel .tab-content').forEach(t => t.classList.remove('active'));
   document.getElementById(`right-tab-${id}`)?.classList.add('active');
   if (id === 'msg') renderMessages();
   if (id === 'alerts') renderAlertsList();
+  if (id === 'weather') {
+    loadWeatherPanel();
+    clearInterval(wxRefreshTimer);
+    wxRefreshTimer = setInterval(loadWeatherPanel, 10 * 60 * 1000);
+  } else {
+    clearInterval(wxRefreshTimer);
+    wxRefreshTimer = null;
+  }
+}
+
+// ── Weather panel ─────────────────────────────────────────────────────────────
+function windDir(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function normalizeWeather(data) {
+  if (data.current) {
+    const c = data.current;
+    return { temp: c.temp, feels_like: c.feels_like, humidity: c.humidity,
+             wind_speed: c.wind_speed, wind_deg: c.wind_deg,
+             visibility: c.visibility, clouds: c.clouds, weather: c.weather, dt: c.dt };
+  }
+  return { temp: data.main?.temp, feels_like: data.main?.feels_like, humidity: data.main?.humidity,
+           wind_speed: data.wind?.speed, wind_deg: data.wind?.deg,
+           visibility: data.visibility, clouds: data.clouds?.all, weather: data.weather, dt: data.dt };
+}
+
+async function loadWeatherPanel() {
+  const el = document.getElementById('weather-panel');
+  if (!el) return;
+  if (!race?.weather_enabled) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:4px">Weather not enabled for this race.</div>';
+    return;
+  }
+  if (!el.innerHTML) el.innerHTML = '<div style="color:var(--text3);font-size:11px">Loading…</div>';
+  const res = await RT.get(`/api/races/${race.id}/weather`);
+  if (!res.ok) {
+    el.innerHTML = `<div style="color:var(--accent3);font-size:11px">${res.error || 'Failed to load weather'}</div>`;
+    return;
+  }
+  const w = normalizeWeather(res.data);
+  const cond = w.weather?.[0];
+  const visMi = w.visibility != null ? `${(w.visibility / 1609.34).toFixed(1)} mi` : '--';
+  const wind  = w.wind_speed != null
+    ? `${Math.round(w.wind_speed)} mph ${w.wind_deg != null ? windDir(w.wind_deg) : ''}`
+    : '--';
+  const updated = w.dt ? new Date(w.dt * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+  el.innerHTML = `
+    <div style="text-align:center;padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
+      ${cond ? `<img src="https://openweathermap.org/img/wn/${cond.icon}@2x.png" width="60" height="60" style="margin-bottom:2px">` : ''}
+      <div style="font-size:32px;font-weight:bold;color:var(--text);line-height:1">${w.temp != null ? Math.round(w.temp) + '°F' : '--'}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px;text-transform:capitalize">${cond?.description || ''}</div>
+      ${w.feels_like != null ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">Feels like ${Math.round(w.feels_like)}°F</div>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <div class="wx-stat"><div class="wx-lbl">WIND</div><div class="wx-val" style="font-size:12px">${wind}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">HUMIDITY</div><div class="wx-val">${w.humidity != null ? w.humidity + '%' : '--'}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">VISIBILITY</div><div class="wx-val">${visMi}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">CLOUDS</div><div class="wx-val">${w.clouds != null ? w.clouds + '%' : '--'}</div></div>
+    </div>
+    ${updated ? `<div style="font-size:9px;color:var(--text3);text-align:center;margin-top:4px">Updated ${updated}</div>` : ''}`;
 }
 
 document.addEventListener('keydown', e => {

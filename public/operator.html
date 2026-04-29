@@ -60,6 +60,10 @@
   #station-info { padding: 10px; }
   .alert-badge { background: rgba(247,129,102,.15); border: 1px solid var(--accent3); color: var(--accent3);
     border-radius: 4px; padding: 3px 8px; font-size: 11px; margin: 2px 0; display: flex; gap: 6px; align-items: center; }
+  .wx-stat { background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px; }
+  .wx-lbl  { font-size:9px;color:var(--text3);letter-spacing:1px;margin-bottom:3px; }
+  .wx-val  { font-size:14px;font-weight:bold;color:var(--text); }
+  #wx-legend { pointer-events:none; }
 </style>
 </head>
 <body>
@@ -132,6 +136,7 @@
       <button class="tab-btn" onclick="OP.switchRightTab('alerts')">ALERTS <span id="alert-tab-count"></span></button>
       <button class="tab-btn" onclick="OP.switchRightTab('msg')">MSG <span id="msg-tab-count"></span></button>
       <button class="tab-btn" onclick="OP.switchRightTab('log')">LOG</button>
+      <button class="tab-btn" id="wx-tab-btn" onclick="OP.switchRightTab('weather')" style="display:none">WX</button>
     </div>
     <!-- INFO TAB -->
     <div class="tab-content active" id="right-tab-info" style="padding:0;overflow-y:auto">
@@ -158,6 +163,10 @@
     <!-- LOG TAB -->
     <div class="tab-content" id="right-tab-log" style="padding:0;overflow-y:auto">
       <div id="event-log"></div>
+    </div>
+    <!-- WEATHER TAB -->
+    <div class="tab-content" id="right-tab-weather" style="padding:10px;overflow-y:auto">
+      <div id="weather-panel"></div>
     </div>
   </div>
 </div>

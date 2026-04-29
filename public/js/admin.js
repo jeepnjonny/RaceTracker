@@ -1476,7 +1476,7 @@ function updateMqttPortDefault() {
 }
 
 async function bindSettingsTab() {
-  const [sRes, aprsRes, wxRes] = await Promise.all([RT.get('/api/settings'), RT.get('/api/aprs/status'), RT.get('/api/weather/status')]);
+  const [sRes, aprsRes] = await Promise.all([RT.get('/api/settings'), RT.get('/api/aprs/status')]);
   if (!sRes.ok) return;
   const s = sRes.data;
 
@@ -1502,7 +1502,6 @@ async function bindSettingsTab() {
   document.getElementById('settings-weather-key').value = s.weather_api_key || '';
 
   if (aprsRes.ok) updateAprsPill(aprsRes.data);
-  if (wxRes.ok) updateWeatherPill(wxRes.data);
   await updateAprsFilterPreview();
 }
 
@@ -1578,17 +1577,6 @@ function updateAprsPill(status) {
   }
 }
 
-function updateWeatherPill(status) {
-  const pill = document.getElementById('weather-pill');
-  if (!pill) return;
-  if (status.ok) {
-    pill.className = 'pill pill-ok pill-pulse';
-  } else if (status.configured) {
-    pill.className = 'pill pill-error';
-  } else {
-    pill.className = 'pill pill-idle';
-  }
-}
 
 async function testWeather() {
   const btn = document.getElementById('s-weather-test-btn');

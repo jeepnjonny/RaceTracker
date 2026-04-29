@@ -6,6 +6,15 @@ let sortBy = 'position', clockInterval;
 let fmt24 = false;
 let mapMode = true; // vs leaderboard on mobile
 let viewerLayersControl = null, viewerBaseTiles = null;
+let viewerLegendControl = null, activeViewerOverlays = new Set();
+
+const LAYER_LEGENDS = {
+  'Radar':         { label:'RADAR INTENSITY',  grad:'#20dc96,#00c800,#fafa00,#ff8c00,#e60000,#9900cc', ticks:['Light','Mod','Heavy','Ext'] },
+  'Precipitation': { label:'PRECIP (mm/h)',    grad:'#c8e6fa,#64b4fa,#1464d2,#00be00,#fafa00,#fa8c32,#fa3232', ticks:['0.1','1','5','25','100','140'] },
+  'Clouds':        { label:'CLOUD COVER',      grad:'rgba(255,255,255,0.15),#888888',                   ticks:['0%','50%','100%'] },
+  'Wind Speed':    { label:'WIND (m/s)',        grad:'#ffffff,#64c8fa,#1464d2,#00be00,#fafa00,#fa6400,#fa0000', ticks:['0','5','15','25','50','200'] },
+  'Temperature':   { label:'TEMPERATURE (°F)', grad:'#820eb4,#1464d2,#20e8e8,#28b428,#f0f032,#fa8c32,#fa3232', ticks:['-4','32','59','86','104'] },
+};
 
 const BASE_LAYERS = {
   'Topo':      { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}', opts:{ maxZoom:16, maxNativeZoom:16, attribution:'USGS' } },
@@ -34,11 +43,15 @@ function initMap() {
   viewerBaseTiles['Topo'].addTo(leafletMap);
   viewerLayersControl = L.control.layers(viewerBaseTiles, {}, { collapsed: true, position: 'topright' }).addTo(leafletMap);
   leafletMap.setView([39.5, -98.5], 5);
+  leafletMap.on('overlayadd',    e => { activeViewerOverlays.add(e.name);    updateViewerLegend(); });
+  leafletMap.on('overlayremove', e => { activeViewerOverlays.delete(e.name); updateViewerLegend(); });
 }
 
 async function setupWeatherLayers(owmKey) {
-  // Rebuild layers control with base layers + fresh weather overlays
   if (viewerLayersControl) { leafletMap.removeControl(viewerLayersControl); viewerLayersControl = null; }
+  if (viewerLegendControl) { leafletMap.removeControl(viewerLegendControl); viewerLegendControl = null; }
+  activeViewerOverlays.clear();
+
   const overlays = {};
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
@@ -60,6 +73,32 @@ async function setupWeatherLayers(owmKey) {
     overlays['&#127777; Temperature']   = owm('temp_new', 0.5);
   }
   viewerLayersControl = L.control.layers(viewerBaseTiles, overlays, { collapsed: true, position: 'topright' }).addTo(leafletMap);
+  if (Object.keys(overlays).length) {
+    viewerLegendControl = L.control({ position: 'bottomright' });
+    viewerLegendControl.onAdd = () => {
+      const div = L.DomUtil.create('div', '');
+      div.id = 'vw-wx-legend';
+      div.style.cssText = 'display:none;background:var(--surface,#161b22);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px 10px;font-family:monospace;min-width:170px;pointer-events:none';
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    };
+    viewerLegendControl.addTo(leafletMap);
+  }
+}
+
+function updateViewerLegend() {
+  const div = document.getElementById('vw-wx-legend');
+  if (!div) return;
+  if (activeViewerOverlays.size === 0) { div.style.display = 'none'; return; }
+  const name = [...activeViewerOverlays].at(-1);
+  const key = Object.keys(LAYER_LEGENDS).find(k => name.includes(k));
+  if (!key) { div.style.display = 'none'; return; }
+  const spec = LAYER_LEGENDS[key];
+  div.style.display = '';
+  div.innerHTML = `
+    <div style="font-size:9px;letter-spacing:1px;color:var(--text3,#7d8590);margin-bottom:4px">${spec.label}</div>
+    <div style="height:8px;width:150px;border-radius:3px;background:linear-gradient(to right,${spec.grad});margin-bottom:3px"></div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2,#8b949e)">${spec.ticks.map(t=>`<span>${t}</span>`).join('')}</div>`;
 }
 
 function handleWS(msg) {
