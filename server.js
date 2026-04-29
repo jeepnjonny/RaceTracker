@@ -11,6 +11,18 @@ const logger = require('./src/logger');
 const aprsClient = require('./src/aprs-client');
 const PORT = process.env.PORT || 3000;
 
+// ── Global error safety net ───────────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  try { logger.log('system', 'error', `UNCAUGHT EXCEPTION: ${err.message}\n${err.stack}`); } catch {}
+  console.error('[FATAL] uncaughtException:', err.stack);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.stack : String(reason);
+  try { logger.log('system', 'error', `UNHANDLED REJECTION: ${msg}`); } catch {}
+  console.error('[FATAL] unhandledRejection:', msg);
+});
+
 // Pipe all console output to the UI logs tab (console channel)
 const _fmtArg = x => typeof x === 'string' ? x : x instanceof Error ? x.message : (() => { try { return JSON.stringify(x); } catch { return String(x); } })();
 const _cLog = console.log.bind(console), _cWarn = console.warn.bind(console), _cErr = console.error.bind(console);
@@ -195,6 +207,35 @@ app.post('/api/weather/test', async (req, res) => {
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
+});
+
+// ── System health / diagnostics ───────────────────────────────────────────────
+app.get('/api/system/health', (req, res) => {
+  if (!req.session?.user || req.session.user.role !== 'admin')
+    return res.status(403).json({ ok: false, error: 'Admin only' });
+
+  const mem = process.memoryUsage();
+  const fds = (() => {
+    try {
+      const fs = require('fs');
+      return fs.readdirSync(`/proc/${process.pid}/fd`).length;
+    } catch { return null; }
+  })();
+  const uptime = process.uptime();
+
+  res.json({
+    ok: true,
+    data: {
+      pid: process.pid,
+      uptime_s: Math.floor(uptime),
+      heap_used_mb:  Math.round(mem.heapUsed  / 1024 / 1024),
+      heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024),
+      rss_mb:        Math.round(mem.rss       / 1024 / 1024),
+      external_mb:   Math.round(mem.external  / 1024 / 1024),
+      open_fds:      fds,
+      node_version:  process.version,
+    },
+  });
 });
 
 // ── Logs ──────────────────────────────────────────────────────────────────────

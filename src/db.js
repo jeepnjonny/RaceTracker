@@ -10,6 +10,9 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('synchronous = NORMAL');   // WAL mode makes NORMAL crash-safe; avoids double-fsync per commit
+db.pragma('cache_size = -65536');    // 64 MB page cache — reduce repeated disk reads
+db.pragma('temp_store = MEMORY');    // temp tables/indexes in RAM
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -142,7 +145,9 @@ CREATE TABLE IF NOT EXISTS tracker_positions (
   rssi         INTEGER,
   timestamp    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_positions_node ON tracker_positions(node_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_positions_node     ON tracker_positions(node_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_registry_longname  ON tracker_registry(long_name);
+CREATE INDEX IF NOT EXISTS idx_registry_shortname ON tracker_registry(short_name);
 
 CREATE TABLE IF NOT EXISTS events (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +162,8 @@ CREATE TABLE IF NOT EXISTS events (
   notes          TEXT,
   manual         INTEGER DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_events_race ON events(race_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_race        ON events(race_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_participant ON events(participant_id);
 
 CREATE TABLE IF NOT EXISTS courses (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

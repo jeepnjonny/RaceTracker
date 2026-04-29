@@ -121,8 +121,12 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
 // Bulk delete all participants for a race
 router.delete('/', requireRole('admin'), (req, res) => {
   try {
+    const t0 = Date.now();
+    // Count events that will be cascade-deleted so we can log timing context
+    const eventCount = db.prepare('SELECT COUNT(*) as c FROM events WHERE race_id=?').get(req.params.raceId)?.c || 0;
     const result = db.prepare('DELETE FROM participants WHERE race_id=?').run(req.params.raceId);
-    logger.log('race', 'warn', `All participants deleted — race ${req.params.raceId} (${result.changes} removed)`);
+    const ms = Date.now() - t0;
+    logger.log('race', 'warn', `All participants deleted — race ${req.params.raceId} (${result.changes} participants, ~${eventCount} events cascade, ${ms}ms)`);
     wsManager.broadcast({ type: 'participant_update', data: { action: 'clear', raceId: req.params.raceId } });
     res.json({ ok: true, deleted: result.changes });
   } catch (e) {
@@ -148,6 +152,7 @@ router.post('/import', requireRole('admin', 'operator'), (req, res) => {
   const { csv } = req.body;
   if (!csv) return res.status(400).json({ ok: false, error: 'csv body required' });
   try {
+    const t0 = Date.now();
     const rows = csvParse(csv);
     const raceId = req.params.raceId;
     const errors = [];
@@ -170,8 +175,9 @@ router.post('/import', requireRole('admin', 'operator'), (req, res) => {
     tx();
 
     const participants = stmtAllParticipants.all(raceId);
+    const ms = Date.now() - t0;
     logger.log('race', errors.length ? 'warn' : 'info',
-      `CSV import — ${rows.length} rows → ${participants.length} participants${errors.length ? `, ${errors.length} error(s)` : ''}`);
+      `CSV import — ${rows.length} rows → ${participants.length} participants${errors.length ? `, ${errors.length} error(s)` : ''} (${ms}ms)`);
     res.json({ ok: true, data: participants, errors });
   } catch (e) {
     logger.log('race', 'error', `CSV import failed: ${e.message}`);
