@@ -918,23 +918,34 @@ function appendEventLog(event) {
 }
 
 // ── Missing / Stopped checks ──────────────────────────────────────────────────
+function shouldSuppressAlerts(p) {
+  // Don't alert for participants who are no longer racing or have finished
+  return p.status === 'finished' || p.status === 'dnf' || p.status === 'dns' || (p._pct != null && p._pct >= 100);
+}
+
 function checkMissing() {
   if (!race || !race.feat_missing) return;
   const now = Math.floor(Date.now() / 1000);
   const missingTimer = race.missing_timer || 3600;
+  let changed = false;
   for (const p of Object.values(participants)) {
+    const key = `missing_${p.id}`;
+    if (shouldSuppressAlerts(p)) {
+      // Auto-dismiss any lingering alert if the participant finished or was marked DNF/DNS
+      if (alerts.find(a => a.key === key)) { alerts = alerts.filter(a => a.key !== key); changed = true; }
+      continue;
+    }
     if (p.status !== 'active') continue;
     const lastSeen = p.registry?.last_seen || 0;
     if (lastSeen && (now - lastSeen) > missingTimer) {
-      const key = `missing_${p.id}`;
       if (!alerts.find(a => a.key === key)) {
         alerts.push({ key, type: 'missing', participantId: p.id, bib: p.bib, name: p.name, timestamp: now, id: Date.now() });
-        renderAlertsList();
-        updateAlertCount();
+        changed = true;
         RT.toast(`MISSING: Bib ${p.bib} ${p.name} — no signal for ${Math.floor((now-lastSeen)/60)} min`, 'alert', 8000);
       }
     }
   }
+  if (changed) { renderAlertsList(); updateAlertCount(); }
   renderLeaderboard();
   renderAllMarkers();
 }
@@ -944,13 +955,17 @@ function checkStopped() {
   const now = Math.floor(Date.now() / 1000);
   const stoppedTime = race.stopped_time || 600;
   for (const p of Object.values(participants)) {
+    const key = `stopped_${p.id}`;
+    if (shouldSuppressAlerts(p)) {
+      if (alerts.find(a => a.key === key)) { alerts = alerts.filter(a => a.key !== key); renderAlertsList(); updateAlertCount(); }
+      continue;
+    }
     if (p.status !== 'active') continue;
     const lastSeen = p.registry?.last_seen || 0;
     const lastSpeed = p.registry?.last_speed ?? null;
     // Only alert if we have recent signal but speed is 0 (or near 0) for stopped_time
     if (!lastSeen || (now - lastSeen) > stoppedTime * 3) continue; // signal too old — missing alert handles it
     if (lastSpeed !== null && lastSpeed < 0.5 && (now - lastSeen) > stoppedTime) {
-      const key = `stopped_${p.id}`;
       if (!alerts.find(a => a.key === key)) {
         alerts.push({ key, type: 'stopped', participantId: p.id, bib: p.bib, name: p.name, timestamp: now, id: Date.now() });
         renderAlertsList();
@@ -958,7 +973,7 @@ function checkStopped() {
         RT.toast(`STOPPED: Bib ${p.bib} ${p.name} — stationary for ${Math.floor((now-lastSeen)/60)} min`, 'alert', 8000);
       }
     } else {
-      alerts = alerts.filter(a => a.key !== `stopped_${p.id}`);
+      alerts = alerts.filter(a => a.key !== key);
     }
   }
 }
