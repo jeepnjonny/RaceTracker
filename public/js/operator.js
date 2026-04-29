@@ -6,7 +6,8 @@ let personnel = [], messages = [];
 let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = null;
 let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null, weatherLegendControl = null;
 let activeWeatherOverlays = new Set(), wxPoller = null;
-let wxData = null, wxError = null, wxDataTs = 0, radarLayer = null, owmKey = null;
+let wxData = null, wxError = null, wxDataTs = 0, wxForecast = null;
+let radarLayer = null, owmKey = null;
 let wxSetupInProgress = false;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
@@ -969,19 +970,23 @@ function startWxPoller() {
 
 async function fetchWxData() {
   if (!race?.weather_enabled) return;
-  const res = await RT.get(`/api/races/${race.id}/weather`);
-  if (res.ok && res.data) {
-    const normalized = normalizeWeather(res.data);
+  const [curRes, fcRes] = await Promise.all([
+    RT.get(`/api/races/${race.id}/weather`),
+    RT.get(`/api/races/${race.id}/weather/forecast`),
+  ]);
+  if (curRes.ok && curRes.data) {
+    const normalized = normalizeWeather(curRes.data);
     if (normalized) {
       wxData = normalized;
       wxError = null;
       wxDataTs = Date.now();
     } else {
-      wxError = res.data?.message || 'Invalid weather response from server';
+      wxError = curRes.data?.message || 'Invalid weather response from server';
     }
   } else {
-    wxError = res.error || 'Failed to load weather data';
+    wxError = curRes.error || 'Failed to load weather data';
   }
+  if (fcRes.ok && Array.isArray(fcRes.data)) wxForecast = fcRes.data;
   if (rightTab === 'weather') renderWeatherPanel();
 }
 
@@ -1022,7 +1027,30 @@ function renderWeatherPanel() {
       <div class="wx-stat"><div class="wx-lbl">VISIBILITY</div><div class="wx-val">${visMi}</div></div>
       <div class="wx-stat"><div class="wx-lbl">CLOUDS</div><div class="wx-val">${w.clouds != null ? w.clouds + '%' : '--'}</div></div>
     </div>
-    ${updated ? `<div style="font-size:9px;color:var(--text3);text-align:center;margin-top:4px">OWM ${updated} · fetched ${ageStr}</div>` : ''}`;
+    ${updated ? `<div style="font-size:9px;color:var(--text3);text-align:center;margin-top:4px">OWM ${updated} · fetched ${ageStr}</div>` : ''}
+    ${renderForecastStrip()}`;
+}
+
+function renderForecastStrip() {
+  if (!wxForecast?.length) return '';
+  const slots = wxForecast.slice(0, 8).map(s => {
+    const t = new Date(s.dt * 1000);
+    const label = t.toLocaleTimeString([], { hour: 'numeric', hour12: true });
+    const icon  = s.weather?.[0]?.icon || '01d';
+    const temp  = s.main?.temp != null ? Math.round(s.main.temp) + '°' : '--';
+    const pop   = s.pop > 0.05 ? Math.round(s.pop * 100) + '%' : '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:48px;padding:4px 2px;border-radius:4px">
+      <div style="font-size:9px;color:var(--text3)">${label}</div>
+      <img src="https://openweathermap.org/img/wn/${icon}.png" width="32" height="32" style="margin:-4px 0">
+      <div style="font-size:11px;font-weight:bold;color:var(--text)">${temp}</div>
+      <div style="font-size:9px;color:#58a6ff;min-height:11px">${pop}</div>
+    </div>`;
+  }).join('');
+  return `
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+      <div style="font-size:9px;letter-spacing:1px;color:var(--text3);margin-bottom:4px">24-HOUR FORECAST</div>
+      <div style="display:flex;gap:2px;overflow-x:auto;padding-bottom:2px">${slots}</div>
+    </div>`;
 }
 
 function windDir(deg) {

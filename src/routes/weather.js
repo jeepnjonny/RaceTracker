@@ -54,17 +54,24 @@ function getStationPoint(raceId) {
   return stn ? { lat: stn.lat, lon: stn.lon } : null;
 }
 
+function resolveLocation(race) {
+  return getTrackFirstPoint(race)
+      || (race.weather_lat ? { lat: race.weather_lat, lon: race.weather_lon } : null)
+      || getStationPoint(race.id);
+}
+
+function resolveKey() {
+  return db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get()?.value || null;
+}
+
 router.get('/', requireAuth, async (req, res) => {
   const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.raceId);
   if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
 
-  const apiKeyRow = db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get();
-  const apiKey = apiKeyRow?.value;
+  const apiKey = resolveKey();
   if (!apiKey) return res.status(400).json({ ok: false, error: 'No OpenWeather API key configured in Settings' });
 
-  const pt = getTrackFirstPoint(race)
-          || (race.weather_lat ? { lat: race.weather_lat, lon: race.weather_lon } : null)
-          || getStationPoint(race.id);
+  const pt = resolveLocation(race);
   if (!pt) return res.status(400).json({ ok: false, error: 'No location for this race — add a course, track file, or at least one station' });
 
   const { lat, lon } = pt;
@@ -81,6 +88,27 @@ router.get('/', requireAuth, async (req, res) => {
     const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,daily&appid=${apiKey}&units=imperial`;
     const data = await httpGet(url);
     return res.json({ ok: true, data });
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: `OpenWeather API error: ${e.message}` });
+  }
+});
+
+// 24-hour forecast: OWM v2.5 free-tier, 3-hour intervals, first 8 slots = 24 h
+router.get('/forecast', requireAuth, async (req, res) => {
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.raceId);
+  if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
+
+  const apiKey = resolveKey();
+  if (!apiKey) return res.status(400).json({ ok: false, error: 'No OpenWeather API key configured in Settings' });
+
+  const pt = resolveLocation(race);
+  if (!pt) return res.status(400).json({ ok: false, error: 'No location for this race' });
+
+  const { lat, lon } = pt;
+  try {
+    const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial&cnt=8`;
+    const data = await httpGet(url);
+    return res.json({ ok: true, data: data.list || [] });
   } catch (e) {
     return res.status(502).json({ ok: false, error: `OpenWeather API error: ${e.message}` });
   }
