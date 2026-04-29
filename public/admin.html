@@ -13,7 +13,7 @@
   .admin-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .admin-tab {
     padding: 8px 16px; background: none; border: none; border-bottom: 2px solid transparent;
-    color: var(--text2); font-size: 11px; letter-spacing: 1px; border-radius: 0;
+    color: var(--text2); font-size: 12px; letter-spacing: 1px; border-radius: 0;
     cursor: pointer; transition: all .15s;
   }
   .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -21,17 +21,17 @@
   .admin-section { display: none; }
   .admin-section.active { display: block; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
-  .card h3 { font-size: 11px; letter-spacing: 2px; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
+  .card h3 { font-size: 12px; letter-spacing: 2px; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
   .race-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
     background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; cursor: pointer; }
   .race-card:hover { border-color: var(--accent); }
   .race-card.active-race { border-color: var(--accent2); }
   .race-card.selected-race { background: var(--surface3, #161b22); }
   .infra-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px;
-    border-bottom: 1px solid var(--border); font-size: 11px; }
+    border-bottom: 1px solid var(--border); font-size: 12px; }
   .infra-node { color: var(--accent4); font-weight: bold; min-width: 100px; }
-  .icon-preview { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
-  .log-ch-btn { padding: 3px 12px; font-size: 10px; letter-spacing: 1px; background: var(--surface2); border: 1px solid var(--border); color: var(--text3); border-radius: 4px; cursor: pointer; }
+  .icon-preview { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+  .log-ch-btn { padding: 3px 12px; font-size: 11px; letter-spacing: 1px; background: var(--surface2); border: 1px solid var(--border); color: var(--text3); border-radius: 4px; cursor: pointer; }
   .log-ch-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
   #race-context-bar {
     background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
@@ -68,8 +68,8 @@
     <div class="admin-tabs" id="admin-tabs"></div>
     <div id="race-context-bar" class="hidden">
       <div class="race-context-label">
-        <span style="font-size:9px;letter-spacing:1.5px;color:var(--text3)">CONFIGURING</span>
-        <span id="race-context-name" style="font-size:12px;font-weight:bold;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
+        <span style="font-size:10px;letter-spacing:1.5px;color:var(--text3)">CONFIGURING</span>
+        <span id="race-context-name" style="font-size:13px;font-weight:bold;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
       </div>
       <div id="race-tabs"></div>
     </div>
@@ -118,35 +118,35 @@
     <div style="display:flex;flex-direction:column;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px">
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-missing" checked>
-        <label for="rm-feat-missing" style="flex:1;font-size:12px;cursor:pointer">Missing timer</label>
+        <label for="rm-feat-missing" style="flex:1;font-size:13px;cursor:pointer">Missing timer</label>
         <input id="rm-missing-timer" type="number" min="1" value="60" style="width:64px;text-align:right">
-        <span style="font-size:11px;color:var(--text3);min-width:24px">min</span>
+        <span style="font-size:12px;color:var(--text3);min-width:24px">min</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-auto-log" checked>
-        <label for="rm-feat-auto-log" style="flex:1;font-size:12px;cursor:pointer">Auto-log aid stations (geofence)</label>
-        <span style="font-size:10px;color:var(--text3)">start/finish</span>
+        <label for="rm-feat-auto-log" style="flex:1;font-size:13px;cursor:pointer">Auto-log aid stations (geofence)</label>
+        <span style="font-size:11px;color:var(--text3)">start/finish</span>
         <input id="rm-geofence" type="number" min="1" value="15" style="width:56px;text-align:right">
-        <span style="font-size:11px;color:var(--text3)">m</span>
-        <span style="font-size:10px;color:var(--text3)">checkpoint</span>
+        <span style="font-size:12px;color:var(--text3)">m</span>
+        <span style="font-size:11px;color:var(--text3)">checkpoint</span>
         <input id="rm-checkpoint-radius" type="number" min="1" value="50" style="width:56px;text-align:right">
-        <span style="font-size:11px;color:var(--text3);min-width:16px">m</span>
+        <span style="font-size:12px;color:var(--text3);min-width:16px">m</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-auto-start" checked>
-        <label for="rm-feat-auto-start" style="flex:1;font-size:12px;cursor:pointer">Auto-start / finish participants</label>
+        <label for="rm-feat-auto-start" style="flex:1;font-size:13px;cursor:pointer">Auto-start / finish participants</label>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-off-course" checked>
-        <label for="rm-feat-off-course" style="flex:1;font-size:12px;cursor:pointer">Off-course alert</label>
+        <label for="rm-feat-off-course" style="flex:1;font-size:13px;cursor:pointer">Off-course alert</label>
         <input id="rm-off-course" type="number" min="1" value="100" style="width:64px;text-align:right">
-        <span style="font-size:11px;color:var(--text3);min-width:24px">m</span>
+        <span style="font-size:12px;color:var(--text3);min-width:24px">m</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-stopped" checked>
-        <label for="rm-feat-stopped" style="flex:1;font-size:12px;cursor:pointer">Stopped alert</label>
+        <label for="rm-feat-stopped" style="flex:1;font-size:13px;cursor:pointer">Stopped alert</label>
         <input id="rm-stopped" type="number" min="1" value="10" style="width:64px;text-align:right">
-        <span style="font-size:11px;color:var(--text3);min-width:24px">min</span>
+        <span style="font-size:12px;color:var(--text3);min-width:24px">min</span>
       </div>
     </div>
     <div class="section-header">FEATURES</div>

@@ -131,23 +131,23 @@ function bindRacesTab() {
 function renderRaceList() {
   const el = document.getElementById('race-list');
   if (!el) return;
-  if (!races.length) { el.innerHTML = '<div class="text-dim" style="padding:12px;font-size:12px">No races yet.</div>'; return; }
+  if (!races.length) { el.innerHTML = '<div class="text-dim" style="padding:12px;font-size:13px">No races yet.</div>'; return; }
   el.innerHTML = races.map(r => `
     <div class="race-card ${r.status==='active'?'active-race':''}${r.id===selectedRaceId?' selected-race':''}" onclick="configureRace(${r.id})">
       <div style="flex:1">
         <div style="font-weight:bold;color:${r.status==='active'?'var(--accent2)':'var(--text)'}">${r.name}</div>
-        <div class="text-dim" style="font-size:10px">${r.date} · ${r.participant_count||0} participants</div>
+        <div class="text-dim" style="font-size:11px">${r.date} · ${r.participant_count||0} participants</div>
       </div>
       <span class="badge" style="background:${r.status==='active'?'#3fb95022':r.status==='past'?'#48505822':'#58a6ff22'};color:${r.status==='active'?'var(--accent2)':r.status==='past'?'var(--text3)':'var(--accent)'}">${r.status.toUpperCase()}</span>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${r.status!=='active'?`<button onclick="event.stopPropagation();activateRace(${r.id})" class="success" style="font-size:10px;padding:3px 8px">ACTIVATE</button>`:''}
-        ${r.status==='active'?`<button onclick="event.stopPropagation();deactivateRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEACTIVATE</button>`:''}
-        <button onclick="event.stopPropagation();openRaceModal(${r.id})" style="font-size:10px;padding:3px 8px">EDIT</button>
-        <button onclick="event.stopPropagation();cloneRace(${r.id})" style="font-size:10px;padding:3px 8px">CLONE</button>
-        ${r.viewer_token?`<button onclick="event.stopPropagation();copyViewerLink('${r.viewer_token}')" style="font-size:10px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
-         <button onclick="event.stopPropagation();revokeViewerToken(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">REVOKE</button>`
-         :`<button onclick="event.stopPropagation();genViewerToken(${r.id})" style="font-size:10px;padding:3px 8px">GEN VIEWER</button>`}
-        ${r.status!=='active'?`<button onclick="event.stopPropagation();deleteRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEL</button>`:''}
+        ${r.status!=='active'?`<button onclick="event.stopPropagation();activateRace(${r.id})" class="success" style="font-size:11px;padding:3px 8px">ACTIVATE</button>`:''}
+        ${r.status==='active'?`<button onclick="event.stopPropagation();deactivateRace(${r.id})" class="danger" style="font-size:11px;padding:3px 8px">DEACTIVATE</button>`:''}
+        <button onclick="event.stopPropagation();openRaceModal(${r.id})" style="font-size:11px;padding:3px 8px">EDIT</button>
+        <button onclick="event.stopPropagation();cloneRace(${r.id})" style="font-size:11px;padding:3px 8px">CLONE</button>
+        ${r.viewer_token?`<button onclick="event.stopPropagation();copyViewerLink('${r.viewer_token}')" style="font-size:11px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
+         <button onclick="event.stopPropagation();revokeViewerToken(${r.id})" class="danger" style="font-size:11px;padding:3px 8px">REVOKE</button>`
+         :`<button onclick="event.stopPropagation();genViewerToken(${r.id})" style="font-size:11px;padding:3px 8px">GEN VIEWER</button>`}
+        ${r.status!=='active'?`<button onclick="event.stopPropagation();deleteRace(${r.id})" class="danger" style="font-size:11px;padding:3px 8px">DEL</button>`:''}
       </div>
     </div>
   `).join('');
@@ -318,7 +318,7 @@ async function loadHeatsClasses() {
 function renderHeatsList() {
   const el = document.getElementById('heats-list');
   if (!el) return;
-  if (!heats.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No heats defined.</div>'; return; }
+  if (!heats.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No heats defined.</div>'; return; }
   el.innerHTML = `<table class="data-table"><thead><tr><th>NAME</th><th>COLOR</th><th>SHAPE</th><th>ICON</th><th></th></tr></thead><tbody>
     ${heats.map(h => `<tr>
       <td>${h.name}</td>
@@ -326,8 +326,8 @@ function renderHeatsList() {
       <td>${h.shape}</td>
       <td>${RT.SHAPES[h.shape]?.(h.color, 18) || ''}</td>
       <td style="text-align:right">
-        <button style="font-size:10px;padding:2px 8px" onclick="openHeatModal(${h.id})">EDIT</button>
-        <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deleteHeat(${h.id})">DEL</button>
+        <button style="font-size:11px;padding:2px 8px" onclick="openHeatModal(${h.id})">EDIT</button>
+        <button class="danger" style="font-size:11px;padding:2px 8px" onclick="deleteHeat(${h.id})">DEL</button>
       </td>
     </tr>`).join('')}
   </tbody></table>`;
@@ -336,10 +336,10 @@ function renderHeatsList() {
 function renderClassesList() {
   const el = document.getElementById('classes-list');
   if (!el) return;
-  if (!classes.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No classes defined.</div>'; return; }
+  if (!classes.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No classes defined.</div>'; return; }
   el.innerHTML = `<table class="data-table"><thead><tr><th>NAME</th><th></th></tr></thead><tbody>
     ${classes.map(c => `<tr><td>${c.name}</td><td style="text-align:right">
-      <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deleteClass(${c.id})">DEL</button>
+      <button class="danger" style="font-size:11px;padding:2px 8px" onclick="deleteClass(${c.id})">DEL</button>
     </td></tr>`).join('')}
   </tbody></table>`;
 }
@@ -359,7 +359,7 @@ function updateHeatPreview() {
   const color = document.getElementById('hm-color').value;
   const shape = document.getElementById('hm-shape').value;
   const el = document.getElementById('hm-preview');
-  if (el) el.innerHTML = (RT.SHAPES[shape]?.(color, 24) || '') + `<span style="color:${color};font-size:12px">${shape}</span>`;
+  if (el) el.innerHTML = (RT.SHAPES[shape]?.(color, 24) || '') + `<span style="color:${color};font-size:13px">${shape}</span>`;
 }
 
 async function saveHeat() {
@@ -407,17 +407,17 @@ function renderCourseTab() {
         <h3>KML / GPX LIBRARY</h3>
         <div style="margin-bottom:8px">
           <div class="upload-zone" onclick="document.getElementById('course-upload-input').click()" style="padding:8px;cursor:pointer">
-            <span style="font-size:11px">&#8593; Upload KML or GPX</span>
+            <span style="font-size:12px">&#8593; Upload KML or GPX</span>
             <input type="file" id="course-upload-input" accept=".kml,.gpx" style="display:none" onchange="uploadCourseFile(this)">
           </div>
         </div>
-        <div id="course-file-list"><div class="text-dim" style="font-size:12px;padding:6px">Loading...</div></div>
+        <div id="course-file-list"><div class="text-dim" style="font-size:13px;padding:6px">Loading...</div></div>
       </div>
     </div>
     <!-- Right: course detail panel -->
     <div id="course-detail-panel">
       <div class="card" style="margin-bottom:0">
-        <div id="course-detail-inner" style="color:var(--text3);font-size:12px;padding:20px;text-align:center">
+        <div id="course-detail-inner" style="color:var(--text3);font-size:13px;padding:20px;text-align:center">
           Select a course file to preview
         </div>
       </div>
@@ -431,17 +431,17 @@ function renderCourseTab() {
         <h3>STATION CSV LIBRARY</h3>
         <div style="margin-bottom:8px">
           <div class="upload-zone" onclick="document.getElementById('csv-lib-input').click()" style="padding:8px;cursor:pointer">
-            <span style="font-size:11px">&#8593; Upload CSV</span>
+            <span style="font-size:12px">&#8593; Upload CSV</span>
             <input type="file" id="csv-lib-input" accept=".csv" style="display:none" onchange="uploadCsvFile(this)">
           </div>
         </div>
-        <div id="csv-lib-list"><div class="text-dim" style="font-size:12px;padding:6px">Loading...</div></div>
+        <div id="csv-lib-list"><div class="text-dim" style="font-size:13px;padding:6px">Loading...</div></div>
       </div>
     </div>
     <!-- Right: CSV detail -->
     <div id="csv-detail-panel">
       <div class="card" style="margin-bottom:0">
-        <div id="csv-detail-inner" style="color:var(--text3);font-size:12px;padding:20px;text-align:center">
+        <div id="csv-detail-inner" style="color:var(--text3);font-size:13px;padding:20px;text-align:center">
           Select a CSV file to preview
         </div>
       </div>
@@ -455,7 +455,7 @@ function renderCourseTab() {
       <button onclick="showInlineCsvImport()">CSV IMPORT</button>
     </div>
     <div id="inline-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">
-      <div class="text-dim" style="font-size:11px;margin-bottom:6px">Columns: name, lat, lon, type (start/finish/aid/checkpoint), cutoff_time</div>
+      <div class="text-dim" style="font-size:12px;margin-bottom:6px">Columns: name, lat, lon, type (start/finish/aid/checkpoint), cutoff_time</div>
       <div class="upload-zone" onclick="document.getElementById('inline-csv-input').click()" style="padding:8px">
         <div id="inline-csv-label">&#8593; Select CSV file</div>
         <input type="file" id="inline-csv-input" accept=".csv" style="display:none" onchange="inlineCsvSelected(this)">
@@ -483,15 +483,15 @@ async function loadCourseFiles() {
 function renderCourseFileList() {
   const el = document.getElementById('course-file-list');
   if (!el) return;
-  if (!courseFiles.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No course files uploaded yet.</div>'; return; }
+  if (!courseFiles.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No course files uploaded yet.</div>'; return; }
   el.style.maxHeight = '360px';
   el.style.overflowY = 'auto';
   el.innerHTML = courseFiles.map(c => `
     <div class="infra-row" style="cursor:pointer;border-radius:4px;min-width:0;${c.id===selectedCourseId?'background:var(--surface3,#161b22);':''}" onclick="selectCourse(${c.id})">
-      <span title="${c.name}" style="flex:1;font-size:12px;font-weight:bold;color:var(--accent4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${c.name}</span>
+      <span title="${c.name}" style="flex:1;font-size:13px;font-weight:bold;color:var(--accent4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${c.name}</span>
       <span class="badge" style="flex-shrink:0;color:${c.file_type==='kml'?'var(--accent4)':'var(--accent)'};">${c.file_type.toUpperCase()}</span>
-      <button style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();renameCourse(${c.id})">REN</button>
-      <button class="danger" style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();deleteCourse(${c.id})">DEL</button>
+      <button style="font-size:11px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();renameCourse(${c.id})">REN</button>
+      <button class="danger" style="font-size:11px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();deleteCourse(${c.id})">DEL</button>
     </div>`).join('');
 }
 
@@ -499,9 +499,9 @@ async function selectCourse(id) {
   selectedCourseId = id;
   renderCourseFileList();
   const el = document.getElementById('course-detail-inner');
-  el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Loading...</div>';
+  el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:13px">Loading...</div>';
   const res = await RT.get(`/api/courses/${id}/parse`);
-  if (!res.ok) { el.innerHTML = `<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Error: ${res.error}</div>`; return; }
+  if (!res.ok) { el.innerHTML = `<div class="text-dim" style="padding:20px;text-align:center;font-size:13px">Error: ${res.error}</div>`; return; }
   courseParseData = res.data;
   renderCourseDetail(el, courseFiles.find(c => c.id === id));
 }
@@ -538,13 +538,13 @@ function renderCourseDetail(el, course) {
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div style="font-size:13px;font-weight:bold;color:var(--text)">${course.name}</div>
-      <div class="text-dim" style="font-size:11px">${dist}${d.trackPoints?` · ${d.trackPoints.length} pts`:''}</div>
+      <div style="font-size:14px;font-weight:bold;color:var(--text)">${course.name}</div>
+      <div class="text-dim" style="font-size:12px">${dist}${d.trackPoints?` · ${d.trackPoints.length} pts`:''}</div>
     </div>
     ${svg}
     ${hasPaths ? `
     <div style="margin-top:10px">
-      <label style="font-size:10px;letter-spacing:1px;color:var(--text3)">SELECT PATH</label>
+      <label style="font-size:11px;letter-spacing:1px;color:var(--text3)">SELECT PATH</label>
       <select onchange="setCoursePathIndex(${course.id}, this.value)" style="margin-top:4px">
         ${d.paths.map(p => `<option value="${p.index}"${p.index===d.pathIndex?' selected':''}>${p.name} (${p.pointCount} pts)</option>`).join('')}
       </select>
@@ -559,20 +559,20 @@ function renderCourseDetail(el, course) {
       const labelB = isOutBack ? 'TURNAROUND'   : 'FINISH';
       const missing = [missingA && labelA, missingB && labelB].filter(Boolean).join(' + ');
       return `<div style="background:rgba(210,153,34,.10);border:1px solid rgba(210,153,34,.35);border-radius:4px;padding:7px 10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span style="font-size:11px;color:#d2993a;flex:1">&#9888; No ${missing} station for <strong>${race?.name || 'selected race'}</strong></span>
-        <button onclick="autoCreateStartFinish()" style="font-size:10px;padding:4px 10px;white-space:nowrap">AUTO-CREATE FROM TRACK</button>
+        <span style="font-size:12px;color:#d2993a;flex:1">&#9888; No ${missing} station for <strong>${race?.name || 'selected race'}</strong></span>
+        <button onclick="autoCreateStartFinish()" style="font-size:11px;padding:4px 10px;white-space:nowrap">AUTO-CREATE FROM TRACK</button>
       </div>`;
     })() : ''}
     ${wpts.length ? `
     <div style="margin-top:12px">
-      <div style="font-size:10px;letter-spacing:1px;color:var(--text3);margin-bottom:6px">WAYPOINTS / POINTS OF INTEREST (${wpts.length})</div>
+      <div style="font-size:11px;letter-spacing:1px;color:var(--text3);margin-bottom:6px">WAYPOINTS / POINTS OF INTEREST (${wpts.length})</div>
       <div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px">
         ${wpts.map((w, i) => `
         <div class="infra-row" style="gap:6px">
           <input type="checkbox" id="wpt-${i}" checked style="flex-shrink:0">
-          <label for="wpt-${i}" style="flex:1;font-size:12px;cursor:pointer">${w.name}</label>
-          <span class="text-dim" style="font-size:10px">${w.lat.toFixed(4)}, ${w.lon.toFixed(4)}</span>
-          <select id="wpt-type-${i}" style="font-size:10px;padding:1px 4px">
+          <label for="wpt-${i}" style="flex:1;font-size:13px;cursor:pointer">${w.name}</label>
+          <span class="text-dim" style="font-size:11px">${w.lat.toFixed(4)}, ${w.lon.toFixed(4)}</span>
+          <select id="wpt-type-${i}" style="font-size:11px;padding:1px 4px">
             <option value="aid">AID</option><option value="checkpoint">CHECK</option>
             <option value="start">START</option><option value="finish">FINISH</option>
             <option value="start_finish">S/F</option><option value="turnaround">TURN</option>
@@ -580,9 +580,9 @@ function renderCourseDetail(el, course) {
         </div>`).join('')}
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-        <button class="primary" onclick="seedWaypointsToRace()" style="font-size:10px;padding:4px 10px">SEED STATIONS TO RACE</button>
+        <button class="primary" onclick="seedWaypointsToRace()" style="font-size:11px;padding:4px 10px">SEED STATIONS TO RACE</button>
       </div>
-    </div>` : `<div class="text-dim" style="font-size:11px;margin-top:10px">No waypoints/POIs in this file. Use the CSV library to import station coordinates.</div>`}`;
+    </div>` : `<div class="text-dim" style="font-size:12px;margin-top:10px">No waypoints/POIs in this file. Use the CSV library to import station coordinates.</div>`}`;
 }
 
 
@@ -649,7 +649,7 @@ async function deleteCourse(id) {
     selectedCourseId = null;
     courseParseData = null;
     const el = document.getElementById('course-detail-inner');
-    if (el) el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Select a course file to preview</div>';
+    if (el) el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:13px">Select a course file to preview</div>';
   }
   await loadCourseFiles();
   RT.toast('Course deleted', 'ok');
@@ -680,14 +680,14 @@ async function loadCsvLibFiles() {
 function renderCsvLibList() {
   const el = document.getElementById('csv-lib-list');
   if (!el) return;
-  if (!csvFilesList.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No CSV files uploaded yet.</div>'; return; }
+  if (!csvFilesList.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No CSV files uploaded yet.</div>'; return; }
   el.style.maxHeight = '360px';
   el.style.overflowY = 'auto';
   el.innerHTML = csvFilesList.map(f => `
     <div class="infra-row" style="cursor:pointer;border-radius:4px;min-width:0;${f.id===selectedCsvId?'background:var(--surface3,#161b22);':''}" onclick="selectCsvFile(${f.id})">
-      <span title="${f.name}" style="flex:1;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${f.name}</span>
-      <button style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();renameCsvFile(${f.id})">REN</button>
-      <button class="danger" style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();deleteCsvFile(${f.id})">DEL</button>
+      <span title="${f.name}" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${f.name}</span>
+      <button style="font-size:11px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();renameCsvFile(${f.id})">REN</button>
+      <button class="danger" style="font-size:11px;padding:2px 6px;flex-shrink:0" onclick="event.stopPropagation();deleteCsvFile(${f.id})">DEL</button>
     </div>`).join('');
 }
 
@@ -695,22 +695,22 @@ async function selectCsvFile(id) {
   selectedCsvId = id;
   renderCsvLibList();
   const el = document.getElementById('csv-detail-inner');
-  el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Loading...</div>';
+  el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:13px">Loading...</div>';
   const res = await RT.get(`/api/csv-files/${id}/preview`);
-  if (!res.ok) { el.innerHTML = `<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Error: ${res.error}</div>`; return; }
+  if (!res.ok) { el.innerHTML = `<div class="text-dim" style="padding:20px;text-align:center;font-size:13px">Error: ${res.error}</div>`; return; }
   const { lines, total } = res.data;
   const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name}</option>`).join('');
   el.innerHTML = `
-    <div style="font-size:13px;font-weight:bold;color:var(--text);margin-bottom:8px">${csvFilesList.find(f=>f.id===id)?.name} <span class="text-dim" style="font-size:11px">(${total} rows)</span></div>
+    <div style="font-size:14px;font-weight:bold;color:var(--text);margin-bottom:8px">${csvFilesList.find(f=>f.id===id)?.name} <span class="text-dim" style="font-size:12px">(${total} rows)</span></div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:4px">
       <table class="data-table" style="margin:0">
-        <tbody>${lines.map((l, i) => `<tr style="${i===0?'background:var(--surface2)':''}"><td style="font-size:11px;white-space:nowrap">${l.split(',').join('</td><td style="font-size:11px;white-space:nowrap">')}</td></tr>`).join('')}</tbody>
+        <tbody>${lines.map((l, i) => `<tr style="${i===0?'background:var(--surface2)':''}"><td style="font-size:12px;white-space:nowrap">${l.split(',').join('</td><td style="font-size:12px;white-space:nowrap">')}</td></tr>`).join('')}</tbody>
       </table>
     </div>
     <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-      <label style="font-size:11px;color:var(--text3)">IMPORT TO RACE:</label>
+      <label style="font-size:12px;color:var(--text3)">IMPORT TO RACE:</label>
       <select id="csv-import-race-sel" style="flex:1">${raceOpts}</select>
-      <button class="primary" onclick="importCsvFromLibrary(${id})" style="font-size:10px;padding:4px 10px">IMPORT STATIONS</button>
+      <button class="primary" onclick="importCsvFromLibrary(${id})" style="font-size:11px;padding:4px 10px">IMPORT STATIONS</button>
     </div>`;
 }
 
@@ -744,7 +744,7 @@ async function deleteCsvFile(id) {
   if (selectedCsvId === id) {
     selectedCsvId = null;
     const el = document.getElementById('csv-detail-inner');
-    if (el) el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:12px">Select a CSV file to preview</div>';
+    if (el) el.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;font-size:13px">Select a CSV file to preview</div>';
   }
   await loadCsvLibFiles();
   RT.toast('CSV file deleted', 'ok');
@@ -789,7 +789,7 @@ function stationWarningHtml() {
     if (!stations.some(s => s.type === 'finish')) missing.push('FINISH');
   }
   if (!missing.length) return '';
-  return `<div style="background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4);border-radius:4px;padding:7px 10px;margin-bottom:8px;font-size:11px;color:#d2993a">
+  return `<div style="background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4);border-radius:4px;padding:7px 10px;margin-bottom:8px;font-size:12px;color:#d2993a">
     &#9888; No <strong>${missing.join(' or ')}</strong> station defined — participants will not auto-transition status via geofence.
   </div>`;
 }
@@ -797,7 +797,7 @@ function stationWarningHtml() {
 function renderStationsList() {
   const el = document.getElementById('stations-list');
   if (!el) return;
-  if (!stations.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No stations yet. Seed from a course file above, import a CSV, or add manually.</div>'; return; }
+  if (!stations.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No stations yet. Seed from a course file above, import a CSV, or add manually.</div>'; return; }
   el.innerHTML = stationWarningHtml() + `<table class="data-table"><thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>LAT</th><th>LON</th><th>CUTOFF</th><th></th></tr></thead><tbody>
     ${stations.map((s, i) => `<tr>
       <td class="text-dim">${i + 1}</td>
@@ -807,8 +807,8 @@ function renderStationsList() {
       <td class="text-dim">${s.lon.toFixed(5)}</td>
       <td>${s.cutoff_time || '--'}</td>
       <td style="text-align:right">
-        <button style="font-size:10px;padding:2px 8px" onclick="openStationModal(${s.id})">EDIT</button>
-        <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deleteStation(${s.id})">DEL</button>
+        <button style="font-size:11px;padding:2px 8px" onclick="openStationModal(${s.id})">EDIT</button>
+        <button class="danger" style="font-size:11px;padding:2px 8px" onclick="deleteStation(${s.id})">DEL</button>
       </td>
     </tr>`).join('')}
   </tbody></table>`;
@@ -899,16 +899,16 @@ function renderParticipantsTab() {
       <button class="danger" onclick="clearAllParticipants()" style="margin-left:auto">CLEAR ALL</button>
     </div>
     <div id="pt-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:10px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:6px">
         <span style="color:var(--accent3)">Required columns:</span> <code>bib, name, tracker_id</code><br>
         <span style="color:var(--text3)">Optional columns:</span> <code>heat, class, age, phone, emergency_contact</code><br>
         First row must be a header. Heat/class matched by name. Duplicate bibs are updated.
       </div>
       <div class="upload-zone" onclick="document.getElementById('pt-csv-input').click()" id="pt-csv-zone">
-        <span id="pt-csv-label" style="font-size:11px">&#8593; Select CSV file</span>
+        <span id="pt-csv-label" style="font-size:12px">&#8593; Select CSV file</span>
         <input type="file" id="pt-csv-input" accept=".csv" style="display:none" onchange="ptCsvSelected(this)">
       </div>
-      <div id="pt-csv-error" style="font-size:11px;color:var(--accent3);margin-top:6px;display:none"></div>
+      <div id="pt-csv-error" style="font-size:12px;color:var(--accent3);margin-top:6px;display:none"></div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="primary" id="pt-csv-btn" onclick="importParticipantsCsv()" disabled>IMPORT</button>
         <button onclick="togglePtCsvPanel()">CANCEL</button>
@@ -940,12 +940,12 @@ function renderParticipantSummary() {
   const colors = { dns:'var(--text3)', active:'var(--accent)', dnf:'var(--accent3)', finished:'var(--accent2)' };
   el.innerHTML = Object.entries(counts).map(([s, n]) =>
     `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 12px;text-align:center">
-      <div style="font-size:18px;font-weight:bold;color:${colors[s]}">${n}</div>
-      <div style="font-size:10px;color:var(--text3);letter-spacing:1px">${s.toUpperCase()}</div>
+      <div style="font-size:20px;font-weight:bold;color:${colors[s]}">${n}</div>
+      <div style="font-size:11px;color:var(--text3);letter-spacing:1px">${s.toUpperCase()}</div>
     </div>`
   ).join('') + `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 12px;text-align:center">
-    <div style="font-size:18px;font-weight:bold;color:var(--text)">${participants.length}</div>
-    <div style="font-size:10px;color:var(--text3);letter-spacing:1px">TOTAL</div>
+    <div style="font-size:20px;font-weight:bold;color:var(--text)">${participants.length}</div>
+    <div style="font-size:11px;color:var(--text3);letter-spacing:1px">TOTAL</div>
   </div>`;
 }
 
@@ -953,7 +953,7 @@ function renderParticipantsList() {
   const el = document.getElementById('participants-list');
   if (!el) return;
   if (!participants.length) {
-    el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No participants yet. Add manually or import a CSV.</div>';
+    el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No participants yet. Add manually or import a CSV.</div>';
     return;
   }
   const STATUS_C = { dns:'var(--text3)', active:'var(--accent)', dnf:'var(--accent3)', finished:'var(--accent2)' };
@@ -969,12 +969,12 @@ function renderParticipantsList() {
         <td>${p.name}</td>
         <td style="white-space:nowrap">${dot} ${heat?.name || '<span class="text-dim">—</span>'}</td>
         <td>${cls?.name || '<span class="text-dim">—</span>'}</td>
-        <td style="font-size:10px;color:var(--accent4)">${p.tracker_id || '<span class="text-dim">—</span>'}</td>
-        <td><span style="color:${STATUS_C[p.status]||'var(--text3)'};font-size:10px;letter-spacing:1px">${(p.status||'dns').toUpperCase()}</span></td>
+        <td style="font-size:11px;color:var(--accent4)">${p.tracker_id || '<span class="text-dim">—</span>'}</td>
+        <td><span style="color:${STATUS_C[p.status]||'var(--text3)'};font-size:11px;letter-spacing:1px">${(p.status||'dns').toUpperCase()}</span></td>
         <td class="text-dim">${p.age || '—'}</td>
         <td style="text-align:right;white-space:nowrap">
-          <button style="font-size:10px;padding:2px 8px" onclick="openParticipantModal(${p.id})">EDIT</button>
-          <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deleteParticipant(${p.id})">DEL</button>
+          <button style="font-size:11px;padding:2px 8px" onclick="openParticipantModal(${p.id})">EDIT</button>
+          <button class="danger" style="font-size:11px;padding:2px 8px" onclick="deleteParticipant(${p.id})">DEL</button>
         </td>
       </tr>`;
     }).join('')}</tbody></table>`;
@@ -1141,7 +1141,7 @@ function renderPersonnelTab() {
       <button class="danger" onclick="clearAllPersonnel()">DELETE ALL</button>
     </div>
     <div id="pers-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">
-      <div class="text-dim" style="font-size:11px;margin-bottom:6px">Columns: name, station_name, tracker_id, phone</div>
+      <div class="text-dim" style="font-size:12px;margin-bottom:6px">Columns: name, station_name, tracker_id, phone</div>
       <div class="upload-zone" onclick="document.getElementById('pers-csv-input').click()" style="padding:8px">
         <div id="pers-csv-label">&#8593; Select CSV file</div>
         <input type="file" id="pers-csv-input" accept=".csv" style="display:none" onchange="personnelCsvSelected(this)">
@@ -1195,7 +1195,7 @@ async function loadPersonnel() {
   stations = sr.ok ? sr.data : [];
   const el = document.getElementById('personnel-list');
   if (!el) return;
-  if (!personnel.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No personnel yet.</div>'; return; }
+  if (!personnel.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No personnel yet.</div>'; return; }
   el.innerHTML = `<table class="data-table"><thead><tr><th>NAME</th><th>STATION</th><th>TRACKER ID</th><th>PHONE</th><th></th></tr></thead><tbody>
     ${personnel.map(p => `<tr>
       <td>${p.name}</td>
@@ -1203,8 +1203,8 @@ async function loadPersonnel() {
       <td>${p.tracker_id || '<span class="text-dim">—</span>'}</td>
       <td>${p.phone || '<span class="text-dim">—</span>'}</td>
       <td style="text-align:right">
-        <button style="font-size:10px;padding:2px 8px" onclick="openPersonnelModal(${p.id})">EDIT</button>
-        <button class="danger" style="font-size:10px;padding:2px 8px" onclick="deletePersonnel(${p.id})">DEL</button>
+        <button style="font-size:11px;padding:2px 8px" onclick="openPersonnelModal(${p.id})">EDIT</button>
+        <button class="danger" style="font-size:11px;padding:2px 8px" onclick="deletePersonnel(${p.id})">DEL</button>
       </td>
     </tr>`).join('')}
   </tbody></table>`;
@@ -1261,11 +1261,11 @@ function renderInfraTab() {
   <div class="card">
     <h3>TRACKER REGISTRY <span class="text-dim">(all nodes seen via MQTT or APRS)</span></h3>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <button onclick="purgeTrackers()" style="font-size:11px;padding:4px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--accent3);border-radius:4px;cursor:pointer">PURGE OLDER THAN</button>
+      <button onclick="purgeTrackers()" style="font-size:12px;padding:4px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--accent3);border-radius:4px;cursor:pointer">PURGE OLDER THAN</button>
       <input id="purge-hours" type="number" min="1" value="24" style="width:56px;text-align:right">
-      <span style="font-size:11px;color:var(--text3)">hours</span>
+      <span style="font-size:12px;color:var(--text3)">hours</span>
     </div>
-    <div id="infra-list"><div class="text-dim" style="font-size:12px;padding:6px">Loading...</div></div>
+    <div id="infra-list"><div class="text-dim" style="font-size:13px;padding:6px">Loading...</div></div>
   </div>`;
 }
 
@@ -1274,7 +1274,7 @@ async function refreshInfra() {
   const el = document.getElementById('infra-list');
   if (!el || !res.ok) return;
   const trackers = res.data;
-  if (!trackers.length) { el.innerHTML = '<div class="text-dim" style="font-size:12px;padding:6px">No trackers seen yet.</div>'; return; }
+  if (!trackers.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No trackers seen yet.</div>'; return; }
   const now = Math.floor(Date.now() / 1000);
   const missingTimer = (races.find(r=>r.id===activeRaceId))?.missing_timer || 3600;
   el.innerHTML = `<table class="data-table"><thead><tr><th>NODE ID</th><th>LONG NAME</th><th>SHORT</th><th>BATTERY</th><th>LAST SEEN</th><th>POSITION</th></tr></thead><tbody>
@@ -1328,8 +1328,8 @@ async function loadUsers() {
       <td><span class="badge" style="color:${u.role==='admin'?'var(--accent3)':'var(--accent)'}">${u.role.toUpperCase()}</span></td>
       <td class="text-dim">${new Date(u.created_at*1000).toLocaleDateString()}</td>
       <td style="text-align:right">
-        <button style="font-size:10px;padding:2px 8px" onclick="openUserModal(${u.id})">EDIT</button>
-        ${u.id!==currentUser.id?`<button class="danger" style="font-size:10px;padding:2px 8px" onclick="deleteUser(${u.id})">DEL</button>`:''}
+        <button style="font-size:11px;padding:2px 8px" onclick="openUserModal(${u.id})">EDIT</button>
+        ${u.id!==currentUser.id?`<button class="danger" style="font-size:11px;padding:2px 8px" onclick="deleteUser(${u.id})">DEL</button>`:''}
       </td>
     </tr>`).join('')}
   </tbody></table>`;
@@ -1373,7 +1373,7 @@ function renderSettingsTab() {
     <h3>MESHTASTIC / MQTT</h3>
     <div class="checkbox-row" style="margin-bottom:10px">
       <input type="checkbox" id="s-mqtt-enabled" checked>
-      <label for="s-mqtt-enabled" style="font-size:12px">Enable MQTT data source</label>
+      <label for="s-mqtt-enabled" style="font-size:13px">Enable MQTT data source</label>
     </div>
     <div class="form-row">
       <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
@@ -1400,7 +1400,7 @@ function renderSettingsTab() {
         <input id="s-mqtt-psk" placeholder="AQ==">
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:2px">
+    <div style="font-size:11px;color:var(--text3);margin-top:2px">
       Both JSON (<code>msh/{region}/2/json/{channel}/#</code>) and encrypted protobuf (<code>msh/{region}/2/e/{channel}/#</code>) are subscribed automatically.
     </div>
     <div class="checkbox-row" style="margin-top:6px">
@@ -1410,7 +1410,7 @@ function renderSettingsTab() {
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="primary" onclick="saveMqttSettings()">SAVE</button>
       <button onclick="testMqtt()" id="s-mqtt-test-btn">TEST CONNECTION</button>
-      <span id="s-mqtt-status" style="font-size:11px;align-self:center;color:var(--text3)"></span>
+      <span id="s-mqtt-status" style="font-size:12px;align-self:center;color:var(--text3)"></span>
     </div>
   </div>
 
@@ -1418,7 +1418,7 @@ function renderSettingsTab() {
     <h3>APRS-IS</h3>
     <div class="checkbox-row" style="margin-bottom:10px">
       <input type="checkbox" id="s-aprs-enabled" onchange="updateAprsFilterPreview()">
-      <label for="s-aprs-enabled" style="font-size:12px">Enable APRS-IS data source</label>
+      <label for="s-aprs-enabled" style="font-size:13px">Enable APRS-IS data source</label>
     </div>
     <div class="form-row">
       <div class="form-group"><label>CALLSIGN</label><input id="s-aprs-callsign" placeholder="K7SWI" oninput="this.value=this.value.toUpperCase()"></div>
@@ -1429,26 +1429,26 @@ function renderSettingsTab() {
       <div class="form-group"><label>PORT</label><input id="s-aprs-port" type="number" value="14580"></div>
     </div>
     <div style="margin:8px 0 4px">
-      <label style="font-size:11px;letter-spacing:1px;color:var(--text3)">SERVER FILTER</label>
+      <label style="font-size:12px;letter-spacing:1px;color:var(--text3)">SERVER FILTER</label>
     </div>
     <div style="display:flex;gap:16px;margin-bottom:6px">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
         <input type="radio" name="aprs-filter" id="s-aprs-filter-location" value="location" onchange="updateAprsFilterPreview()" checked>
         By location <span class="text-dim">(auto-compute center + radius of course)</span>
       </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
         <input type="radio" name="aprs-filter" id="s-aprs-filter-callsign" value="callsign" onchange="updateAprsFilterPreview()">
         By callsign <span class="text-dim">(auto-collect tracker IDs from participants &amp; personnel)</span>
       </label>
     </div>
-    <div style="font-size:10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-family:monospace;color:var(--accent4)" id="aprs-filter-preview">
+    <div style="font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-family:monospace;color:var(--accent4)" id="aprs-filter-preview">
       Previewing filter…
     </div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="primary" onclick="saveAprsSettings()">SAVE</button>
       <button onclick="connectAprs()" id="s-aprs-connect-btn">CONNECT</button>
       <button onclick="disconnectAprs()" class="danger">DISCONNECT</button>
-      <span id="s-aprs-status" style="font-size:11px;align-self:center;color:var(--text3)"></span>
+      <span id="s-aprs-status" style="font-size:12px;align-self:center;color:var(--text3)"></span>
     </div>
   </div>
 
@@ -1461,7 +1461,7 @@ function renderSettingsTab() {
     <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
       <button class="primary" onclick="saveWeatherSettings()">SAVE</button>
       <button onclick="testWeather()" id="s-weather-test-btn">TEST KEY</button>
-      <span id="s-weather-status" style="font-size:11px;color:var(--text3)"></span>
+      <span id="s-weather-status" style="font-size:12px;color:var(--text3)"></span>
     </div>
   </div>`;
 }
@@ -1668,14 +1668,14 @@ function renderLogsTab() {
   return `
   <div class="card" style="padding:12px">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <span style="font-size:11px;letter-spacing:1px;color:var(--text3)">CHANNEL</span>
+      <span style="font-size:12px;letter-spacing:1px;color:var(--text3)">CHANNEL</span>
       ${LOG_CHANNELS.map(c => `<button id="log-ch-${c}" class="log-ch-btn${c===logsChannel?' active':''}" onclick="setLogChannel('${c}')">${c.toUpperCase()}</button>`).join('')}
       <div style="flex:1"></div>
-      <button id="log-pause-btn" onclick="toggleLogPause()" style="font-size:10px;padding:3px 10px">${logsPaused?'RESUME':'PAUSE'}</button>
-      <button onclick="clearLogView()" style="font-size:10px;padding:3px 10px">CLEAR VIEW</button>
-      <button onclick="loadLogs()" style="font-size:10px;padding:3px 10px">REFRESH</button>
+      <button id="log-pause-btn" onclick="toggleLogPause()" style="font-size:11px;padding:3px 10px">${logsPaused?'RESUME':'PAUSE'}</button>
+      <button onclick="clearLogView()" style="font-size:11px;padding:3px 10px">CLEAR VIEW</button>
+      <button onclick="loadLogs()" style="font-size:11px;padding:3px 10px">REFRESH</button>
     </div>
-    <div id="log-stream" style="font-family:monospace;font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;height:520px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+    <div id="log-stream" style="font-family:monospace;font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;height:520px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
   </div>`;
 }
 

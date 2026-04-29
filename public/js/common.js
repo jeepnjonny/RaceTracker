@@ -167,7 +167,7 @@ const RT = (() => {
     const saved = localStorage.getItem('rt-theme') || 'a';
     const sel = document.createElement('select');
     sel.title = 'Display theme';
-    sel.style.cssText = 'font-size:10px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer';
+    sel.style.cssText = 'font-size:11px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer';
     sel.innerHTML = THEMES.map(t => `<option value="${t.id}"${t.id === saved ? ' selected' : ''}>${t.label}</option>`).join('');
     sel.onchange = () => applyTheme(sel.value);
     right.prepend(sel);
@@ -186,7 +186,7 @@ const RT = (() => {
     }
     const colors = { info: 'var(--accent)', ok: 'var(--accent2)', warn: 'var(--accent3)', alert: 'var(--accent3)' };
     const el = document.createElement('div');
-    el.style.cssText = `background:var(--surface);border:1px solid ${colors[type]||colors.info};color:${colors[type]||colors.info};padding:8px 14px;border-radius:6px;font-family:var(--font);font-size:12px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.4);`;
+    el.style.cssText = `background:var(--surface);border:1px solid ${colors[type]||colors.info};color:${colors[type]||colors.info};padding:8px 14px;border-radius:6px;font-family:var(--font);font-size:13px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.4);`;
     el.textContent = msg;
     toastContainer.appendChild(el);
     setTimeout(() => el.remove(), duration);

@@ -96,9 +96,9 @@ function updateViewerLegend() {
   const spec = LAYER_LEGENDS[key];
   div.style.display = '';
   div.innerHTML = `
-    <div style="font-size:9px;letter-spacing:1px;color:var(--text3,#7d8590);margin-bottom:4px">${spec.label}</div>
+    <div style="font-size:10px;letter-spacing:1px;color:var(--text3,#7d8590);margin-bottom:4px">${spec.label}</div>
     <div style="height:8px;width:150px;border-radius:3px;background:linear-gradient(to right,${spec.grad});margin-bottom:3px"></div>
-    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2,#8b949e)">${spec.ticks.map(t=>`<span>${t}</span>`).join('')}</div>`;
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2,#8b949e)">${spec.ticks.map(t=>`<span>${t}</span>`).join('')}</div>`;
 }
 
 function handleWS(msg) {
@@ -158,7 +158,7 @@ function renderStationMarkers() {
                    s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' :
                    s.type === 'netcontrol' ? 'N' : s.type === 'repeater' ? 'R' : s.name[0]?.toUpperCase() || 'A';
     const icon = L.divIcon({
-      html: `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#000">${letter}</div>`,
+      html: `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#000">${letter}</div>`,
       className: '', iconAnchor: [10, 10],
     });
     const m = L.marker([s.lat, s.lon], { icon }).bindTooltip(s.name).addTo(leafletMap);
@@ -252,7 +252,7 @@ function renderLeaderboard() {
       <span style="color:${sc};font-weight:bold">${p.bib}</span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dot} ${p.name}</span>
       <span style="color:var(--accent)">${pct}</span>
-      <span style="color:var(--text2);font-size:10px">${p._pct && p.start_time ? fmtPace(p) : '--'}</span>
+      <span style="color:var(--text2);font-size:11px">${p._pct && p.start_time ? fmtPace(p) : '--'}</span>
     </div>`;
   }).join('');
 }
