@@ -178,6 +178,8 @@ function handleEvent(data) {
 
 function handleParticipantUpdate(data) {
   if (data.action === 'delete') { delete participants[data.id]; renderLeaderboard(); return; }
+  if (data.action === 'clear') { participants = {}; renderLeaderboard(); return; }
+  if (!data.participant) return;
   participants[data.participant.id] = enrichParticipant(data.participant, []);
   renderLeaderboard();
 }

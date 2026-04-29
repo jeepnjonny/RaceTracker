@@ -618,6 +618,10 @@ function handleParticipantUpdate(data) {
   } else if (data.action === 'delete') {
     delete participants[data.id];
     renderLeaderboard();
+  } else if (data.action === 'clear') {
+    participants = {};
+    renderAllMarkers();
+    renderLeaderboard();
   }
 }
 

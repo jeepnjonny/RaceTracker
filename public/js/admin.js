@@ -42,10 +42,14 @@ function showTab(id) {
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
+let _infraRefreshTimer = null;
 function handleWS(msg) {
   if (msg.type === 'mqtt_status') updateMqttPill(msg.data);
   if (msg.type === 'aprs_status') updateAprsPill(msg.data);
-  if (msg.type === 'tracker_info') refreshInfra();
+  if (msg.type === 'tracker_info' && currentTab === 'infra') {
+    // Throttle: at most one refresh per 5 s so bursts of MQTT packets don't flood GET /api/trackers
+    if (!_infraRefreshTimer) _infraRefreshTimer = setTimeout(() => { _infraRefreshTimer = null; refreshInfra(); }, 5000);
+  }
   if (msg.type === 'init') {
     if (msg.data.mqtt) updateMqttPill(msg.data.mqtt);
     if (msg.data.aprs) updateAprsPill(msg.data.aprs);
