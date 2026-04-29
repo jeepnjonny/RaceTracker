@@ -58,7 +58,7 @@ const RT = (() => {
       ws = new WebSocket(url);
       ws.onopen  = () => { console.log('[ws] connected'); clearTimeout(reconnectTimer); };
       ws.onmessage = e => { try { onMessage(JSON.parse(e.data)); } catch {} };
-      ws.onclose = () => { reconnectTimer = setTimeout(connect, 3000); };
+      ws.onclose = () => { reconnectTimer = setTimeout(connect, 2000 + Math.random() * 4000); };
       ws.onerror = () => ws.close();
     }
     connect();

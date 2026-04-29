@@ -950,11 +950,9 @@ async function bindParticipantsTab() { await loadParticipants(); }
 
 async function loadParticipants() {
   if (!selectedRaceId) return;
-  const [pr, hr, cr] = await Promise.all([
-    RT.get(`/api/races/${selectedRaceId}/participants`),
-    RT.get(`/api/races/${selectedRaceId}/heats`),
-    RT.get(`/api/races/${selectedRaceId}/classes`),
-  ]);
+  const pr = await RT.get(`/api/races/${selectedRaceId}/participants`);
+  const hr = await RT.get(`/api/races/${selectedRaceId}/heats`);
+  const cr = await RT.get(`/api/races/${selectedRaceId}/classes`);
   participants = pr.ok ? pr.data : [];
   heats        = hr.ok ? hr.data : [];
   classes      = cr.ok ? cr.data : [];
@@ -1066,8 +1064,12 @@ async function deleteParticipant(id) {
 async function clearAllParticipants() {
   if (!confirm(`Delete ALL participants from this race? This cannot be undone.`)) return;
   const res = await RT.del(`/api/races/${selectedRaceId}/participants`);
-  if (res.ok) { await loadParticipants(); RT.toast(`Cleared ${res.deleted} participants`, 'ok'); }
-  else RT.toast(res.error || 'Failed to clear participants', 'warn');
+  if (res.ok) {
+    participants = [];
+    renderParticipantSummary();
+    renderParticipantsList();
+    RT.toast(`Cleared ${res.deleted} participants`, 'ok');
+  } else RT.toast(res.error || 'Failed to clear participants', 'warn');
 }
 
 function togglePtCsvPanel() {
@@ -1132,8 +1134,10 @@ async function importParticipantsCsv() {
   if (res.ok) {
     const errors = res.errors || [];
     document.getElementById('pt-csv-panel').classList.add('hidden');
-    await loadParticipants();
-    RT.toast(`Imported ${res.data?.length || 0} participants${errors.length ? ` (${errors.length} skipped)` : ''}`, errors.length ? 'warn' : 'ok');
+    participants = res.data || [];
+    renderParticipantSummary();
+    renderParticipantsList();
+    RT.toast(`Imported ${participants.length} participants${errors.length ? ` (${errors.length} skipped)` : ''}`, errors.length ? 'warn' : 'ok');
     if (errors.length) console.warn('Import errors:', errors);
   } else RT.toast(res.error, 'warn');
 }

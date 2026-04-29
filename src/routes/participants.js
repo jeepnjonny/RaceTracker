@@ -120,17 +120,22 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
 
 // Bulk delete all participants for a race
 router.delete('/', requireRole('admin'), (req, res) => {
+  // Log immediately — before any DB work — so we can tell if the handler is even reached
+  logger.log('race', 'info', `CLEAR ALL requested — race ${req.params.raceId} by ${req.session.user.username}`);
   try {
     const t0 = Date.now();
-    // Count events that will be cascade-deleted so we can log timing context
+    const pCount    = db.prepare('SELECT COUNT(*) as c FROM participants WHERE race_id=?').get(req.params.raceId)?.c || 0;
     const eventCount = db.prepare('SELECT COUNT(*) as c FROM events WHERE race_id=?').get(req.params.raceId)?.c || 0;
+    const posCount  = db.prepare('SELECT COUNT(*) as c FROM tracker_positions WHERE race_id=?').get(req.params.raceId)?.c || 0;
+    logger.log('race', 'info', `CLEAR ALL pre-counts — ${pCount} participants, ${eventCount} events, ${posCount} positions`);
+
     const result = db.prepare('DELETE FROM participants WHERE race_id=?').run(req.params.raceId);
     const ms = Date.now() - t0;
-    logger.log('race', 'warn', `All participants deleted — race ${req.params.raceId} (${result.changes} participants, ~${eventCount} events cascade, ${ms}ms)`);
+    logger.log('race', 'warn', `All participants deleted — race ${req.params.raceId} (${result.changes} removed, ${eventCount} events cascaded, ${ms}ms)`);
     wsManager.broadcast({ type: 'participant_update', data: { action: 'clear', raceId: req.params.raceId } });
     res.json({ ok: true, deleted: result.changes });
   } catch (e) {
-    logger.log('race', 'error', `Bulk delete failed: ${e.message}`);
+    logger.log('race', 'error', `Bulk delete failed: ${e.message}\n${e.stack}`);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
