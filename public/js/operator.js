@@ -6,7 +6,8 @@ let personnel = [], messages = [];
 let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = null;
 let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null, weatherLegendControl = null;
 let activeWeatherOverlays = new Set(), wxPoller = null;
-let wxData = null, wxError = null, wxDataTs = 0, wxForecast = null;
+let wxData = null, wxError = null, wxDataTs = 0, wxForecast = null, wxAlerts = [];
+let wxAlertPoller = null;
 let radarLayer = null, owmKey = null;
 let wxSetupInProgress = false;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
@@ -964,8 +965,28 @@ function switchRightTab(id) {
 // ── Weather panel ─────────────────────────────────────────────────────────────
 function startWxPoller() {
   clearInterval(wxPoller);
-  wxPoller = setInterval(fetchWxData, 15 * 60 * 1000);
-  fetchWxData(); // immediate first fetch
+  clearInterval(wxAlertPoller);
+  wxPoller      = setInterval(fetchWxData,   15 * 60 * 1000);
+  wxAlertPoller = setInterval(fetchWxAlerts,  5 * 60 * 1000);
+  fetchWxData();
+  fetchWxAlerts();
+}
+
+async function fetchWxAlerts() {
+  if (!race?.weather_enabled) return;
+  const res = await RT.get(`/api/races/${race.id}/weather/alerts`);
+  wxAlerts = (res.ok && Array.isArray(res.data)) ? res.data : [];
+  updateWxAlertBadge();
+  if (rightTab === 'weather') renderWeatherPanel();
+}
+
+function updateWxAlertBadge() {
+  const btn = document.getElementById('wx-tab-btn');
+  if (!btn) return;
+  const count = wxAlerts.length;
+  btn.textContent = count > 0 ? `WX ⚠ ${count}` : 'WX';
+  btn.style.color     = count > 0 ? 'var(--accent3)' : '';
+  btn.style.borderColor = count > 0 ? 'var(--accent3)' : '';
 }
 
 async function fetchWxData() {
@@ -1015,6 +1036,7 @@ function renderWeatherPanel() {
   const ageStr = ageSec < 60 ? 'just now' : `${Math.round(ageSec / 60)} min ago`;
   const updated = w.dt ? new Date(w.dt * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
   el.innerHTML = `
+    ${renderAlertsSection()}
     <div style="text-align:center;padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
       ${cond ? `<img src="https://openweathermap.org/img/wn/${cond.icon}@2x.png" width="60" height="60" style="margin-bottom:2px">` : ''}
       <div style="font-size:32px;font-weight:bold;color:var(--text);line-height:1">${w.temp != null ? Math.round(w.temp) + '°F' : '--'}</div>
@@ -1051,6 +1073,21 @@ function renderForecastStrip() {
       <div style="font-size:9px;letter-spacing:1px;color:var(--text3);margin-bottom:4px">24-HOUR FORECAST</div>
       <div style="display:flex;gap:2px;overflow-x:auto;padding-bottom:2px">${slots}</div>
     </div>`;
+}
+
+function renderAlertsSection() {
+  if (!wxAlerts?.length) return '';
+  const SEVERITY_COLOR = { Extreme: '#ff4444', Severe: '#ff8c00', Moderate: '#d29922', Minor: '#58a6ff' };
+  const items = wxAlerts.map(a => {
+    const color = SEVERITY_COLOR[a.severity] || 'var(--accent3)';
+    const exp   = a.expires ? new Date(a.expires).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+    return `<div style="border:1px solid ${color};border-radius:4px;padding:6px 8px;margin-bottom:6px;background:${color}18">
+      <div style="font-size:10px;font-weight:bold;color:${color};letter-spacing:.5px">${a.event}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:2px">${a.headline || ''}</div>
+      ${exp ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">Expires ${exp}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div style="margin-bottom:8px">${items}</div>`;
 }
 
 function windDir(deg) {
