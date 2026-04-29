@@ -194,7 +194,7 @@ async function setupWeatherLayers(key) {
     if (frame) {
       radarLayer = L.tileLayer(
         `${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
-        { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxNativeZoom: 12, maxZoom: 18 }
+        { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxZoom: 12 }
       );
       overlays['&#127783; Radar'] = radarLayer;
     }
