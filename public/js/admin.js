@@ -133,22 +133,21 @@ function renderRaceList() {
   if (!el) return;
   if (!races.length) { el.innerHTML = '<div class="text-dim" style="padding:12px;font-size:12px">No races yet.</div>'; return; }
   el.innerHTML = races.map(r => `
-    <div class="race-card ${r.status==='active'?'active-race':''}${r.id===selectedRaceId?' selected-race':''}">
+    <div class="race-card ${r.status==='active'?'active-race':''}${r.id===selectedRaceId?' selected-race':''}" onclick="configureRace(${r.id})">
       <div style="flex:1">
         <div style="font-weight:bold;color:${r.status==='active'?'var(--accent2)':'var(--text)'}">${r.name}</div>
         <div class="text-dim" style="font-size:10px">${r.date} · ${r.participant_count||0} participants</div>
       </div>
       <span class="badge" style="background:${r.status==='active'?'#3fb95022':r.status==='past'?'#48505822':'#58a6ff22'};color:${r.status==='active'?'var(--accent2)':r.status==='past'?'var(--text3)':'var(--accent)'}">${r.status.toUpperCase()}</span>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${r.status!=='active'?`<button onclick="activateRace(${r.id})" class="success" style="font-size:10px;padding:3px 8px">ACTIVATE</button>`:''}
-        ${r.status==='active'?`<button onclick="deactivateRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEACTIVATE</button>`:''}
-        <button onclick="openRaceModal(${r.id})" style="font-size:10px;padding:3px 8px">EDIT</button>
-        <button onclick="configureRace(${r.id})" class="primary" style="font-size:10px;padding:3px 8px">CONFIGURE</button>
-        <button onclick="cloneRace(${r.id})" style="font-size:10px;padding:3px 8px">CLONE</button>
-        ${r.viewer_token?`<button onclick="copyViewerLink('${r.viewer_token}')" style="font-size:10px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
-         <button onclick="revokeViewerToken(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">REVOKE</button>`
-         :`<button onclick="genViewerToken(${r.id})" style="font-size:10px;padding:3px 8px">GEN VIEWER</button>`}
-        ${r.status!=='active'?`<button onclick="deleteRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEL</button>`:''}
+        ${r.status!=='active'?`<button onclick="event.stopPropagation();activateRace(${r.id})" class="success" style="font-size:10px;padding:3px 8px">ACTIVATE</button>`:''}
+        ${r.status==='active'?`<button onclick="event.stopPropagation();deactivateRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEACTIVATE</button>`:''}
+        <button onclick="event.stopPropagation();openRaceModal(${r.id})" style="font-size:10px;padding:3px 8px">EDIT</button>
+        <button onclick="event.stopPropagation();cloneRace(${r.id})" style="font-size:10px;padding:3px 8px">CLONE</button>
+        ${r.viewer_token?`<button onclick="event.stopPropagation();copyViewerLink('${r.viewer_token}')" style="font-size:10px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
+         <button onclick="event.stopPropagation();revokeViewerToken(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">REVOKE</button>`
+         :`<button onclick="event.stopPropagation();genViewerToken(${r.id})" style="font-size:10px;padding:3px 8px">GEN VIEWER</button>`}
+        ${r.status!=='active'?`<button onclick="event.stopPropagation();deleteRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEL</button>`:''}
       </div>
     </div>
   `).join('');
