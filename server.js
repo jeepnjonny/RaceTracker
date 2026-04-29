@@ -182,6 +182,17 @@ app.get('/api/weather/status', (req, res) => {
   res.json({ ok: true, data: { configured: !!(keyRow?.value) } });
 });
 
+// Returns the OWM API key for authenticated users (respects viewer+weather_enabled gate)
+app.get('/api/weather/key', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ ok: false });
+  const keyRow = db.prepare("SELECT value FROM settings WHERE key='weather_api_key'").get();
+  const race = db.prepare("SELECT weather_enabled FROM races WHERE status='active'").get();
+  const user = req.session.user;
+  if (user.role === 'viewer' && !race?.weather_enabled)
+    return res.json({ ok: true, data: { key: null } });
+  res.json({ ok: true, data: { key: keyRow?.value || null } });
+});
+
 app.post('/api/weather/test', async (req, res) => {
   if (!req.session?.user || req.session.user.role !== 'admin')
     return res.status(403).json({ ok: false, error: 'Admin only' });

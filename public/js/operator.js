@@ -5,7 +5,8 @@ let race = null, participants = {}, stations = [], heats = {}, classes = {};
 let personnel = [], messages = [];
 let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = null;
 let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null, weatherLegendControl = null;
-let activeWeatherOverlays = new Set(), wxRefreshTimer = null;
+let activeWeatherOverlays = new Set(), wxRefreshTimer = null, wxPoller = null;
+let wxData = null, wxDataTs = 0, radarLayer = null, owmKey = null;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
 
@@ -43,6 +44,7 @@ async function init() {
   startClock();
   missingCheckInterval = setInterval(checkMissing, 30000);
   stoppedCheckInterval = setInterval(checkStopped, 60000);
+  startWxPoller();
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -142,6 +144,10 @@ async function loadInitialData() {
   updateStats();
   checkStationWarnings();
   loadTrackData();
+
+  // Set up weather map layers via REST path (WS path uses handleInit → setupWeatherLayers)
+  const wxKeyRes = await RT.get('/api/weather/key');
+  if (wxKeyRes.ok) setupWeatherLayers(wxKeyRes.data?.key || null);
 }
 
 async function loadTrackData() {
@@ -172,36 +178,53 @@ function setBaseLayer(name) {
   document.getElementById('base-layer-sel').value = name;
 }
 
-async function setupWeatherLayers(owmKey) {
+async function setupWeatherLayers(key) {
+  owmKey = key;
   if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
   if (weatherLegendControl) { leafletMap.removeControl(weatherLegendControl); weatherLegendControl = null; }
   activeWeatherOverlays.clear();
+  radarLayer = null;
 
   const overlays = {};
   try {
     const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
     const d = await r.json();
     const frame = d.radar?.past?.slice(-1)[0];
-    if (frame) overlays['&#127783; Radar'] = L.tileLayer(
-      `${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
-      { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxNativeZoom: 12 }
-    );
+    if (frame) {
+      radarLayer = L.tileLayer(
+        `${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
+        { opacity: 0.65, attribution: '<a href="https://rainviewer.com">RainViewer</a>', zIndex: 200, maxNativeZoom: 12 }
+      );
+      overlays['&#127783; Radar'] = radarLayer;
+    }
   } catch {}
   if (owmKey) {
     const owm = (layer, opacity) => L.tileLayer(
       `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
       { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 19, zIndex: 200 }
     );
-    overlays['&#127783; Precipitation'] = owm('precipitation_new');
-    overlays['&#9729; Clouds']          = owm('clouds_new', 0.45);
-    overlays['&#127790; Wind Speed']    = owm('wind_new');
-    overlays['&#127777; Temperature']   = owm('temp_new', 0.5);
+    overlays['&#9730; Precipitation'] = owm('precipitation_new');
+    overlays['&#9729; Clouds']        = owm('clouds_new', 0.45);
+    overlays['&#127790; Wind Speed']  = owm('wind_new');
+    overlays['&#127777; Temperature'] = owm('temp_new', 0.5);
   }
   if (Object.keys(overlays).length) {
     weatherLayersControl = L.control.layers({}, overlays, { collapsed: true, position: 'bottomleft' }).addTo(leafletMap);
     weatherLegendControl = createWeatherLegendControl();
     weatherLegendControl.addTo(leafletMap);
   }
+  // Refresh RainViewer radar frame every 10 minutes
+  setInterval(refreshRadarLayer, 10 * 60 * 1000);
+}
+
+async function refreshRadarLayer() {
+  if (!radarLayer) return;
+  try {
+    const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const d = await r.json();
+    const frame = d.radar?.past?.slice(-1)[0];
+    if (frame) radarLayer.setUrl(`${d.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`);
+  } catch {}
 }
 
 function createWeatherLegendControl() {
@@ -934,17 +957,63 @@ function switchRightTab(id) {
   document.getElementById(`right-tab-${id}`)?.classList.add('active');
   if (id === 'msg') renderMessages();
   if (id === 'alerts') renderAlertsList();
-  if (id === 'weather') {
-    loadWeatherPanel();
-    clearInterval(wxRefreshTimer);
-    wxRefreshTimer = setInterval(loadWeatherPanel, 10 * 60 * 1000);
-  } else {
-    clearInterval(wxRefreshTimer);
-    wxRefreshTimer = null;
-  }
+  if (id === 'weather') renderWeatherPanel();
 }
 
 // ── Weather panel ─────────────────────────────────────────────────────────────
+function startWxPoller() {
+  clearInterval(wxPoller);
+  wxPoller = setInterval(fetchWxData, 15 * 60 * 1000);
+  fetchWxData(); // immediate first fetch
+}
+
+async function fetchWxData() {
+  if (!race?.weather_enabled) return;
+  const res = await RT.get(`/api/races/${race.id}/weather`);
+  if (res.ok && res.data) {
+    wxData = normalizeWeather(res.data);
+    wxDataTs = Date.now();
+    if (rightTab === 'weather') renderWeatherPanel();
+  }
+}
+
+function renderWeatherPanel() {
+  const el = document.getElementById('weather-panel');
+  if (!el) return;
+  if (!race?.weather_enabled) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:4px">Weather not enabled for this race.</div>';
+    return;
+  }
+  if (!wxData) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:11px">Loading…</div>';
+    fetchWxData();
+    return;
+  }
+  const w = wxData;
+  const cond = w.weather?.[0];
+  const visMi = w.visibility != null ? `${(w.visibility / 1609.34).toFixed(1)} mi` : '--';
+  const wind  = w.wind_speed != null
+    ? `${Math.round(w.wind_speed)} mph ${w.wind_deg != null ? windDir(w.wind_deg) : ''}`
+    : '--';
+  const ageSec = Math.round((Date.now() - wxDataTs) / 1000);
+  const ageStr = ageSec < 60 ? 'just now' : `${Math.round(ageSec / 60)} min ago`;
+  const updated = w.dt ? new Date(w.dt * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+  el.innerHTML = `
+    <div style="text-align:center;padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
+      ${cond ? `<img src="https://openweathermap.org/img/wn/${cond.icon}@2x.png" width="60" height="60" style="margin-bottom:2px">` : ''}
+      <div style="font-size:32px;font-weight:bold;color:var(--text);line-height:1">${w.temp != null ? Math.round(w.temp) + '°F' : '--'}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px;text-transform:capitalize">${cond?.description || ''}</div>
+      ${w.feels_like != null ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">Feels like ${Math.round(w.feels_like)}°F</div>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <div class="wx-stat"><div class="wx-lbl">WIND</div><div class="wx-val" style="font-size:12px">${wind}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">HUMIDITY</div><div class="wx-val">${w.humidity != null ? w.humidity + '%' : '--'}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">VISIBILITY</div><div class="wx-val">${visMi}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">CLOUDS</div><div class="wx-val">${w.clouds != null ? w.clouds + '%' : '--'}</div></div>
+    </div>
+    ${updated ? `<div style="font-size:9px;color:var(--text3);text-align:center;margin-top:4px">OWM ${updated} · fetched ${ageStr}</div>` : ''}`;
+}
+
 function windDir(deg) {
   const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
   return dirs[Math.round(deg / 22.5) % 16];
@@ -962,41 +1031,6 @@ function normalizeWeather(data) {
            visibility: data.visibility, clouds: data.clouds?.all, weather: data.weather, dt: data.dt };
 }
 
-async function loadWeatherPanel() {
-  const el = document.getElementById('weather-panel');
-  if (!el) return;
-  if (!race?.weather_enabled) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:4px">Weather not enabled for this race.</div>';
-    return;
-  }
-  if (!el.innerHTML) el.innerHTML = '<div style="color:var(--text3);font-size:11px">Loading…</div>';
-  const res = await RT.get(`/api/races/${race.id}/weather`);
-  if (!res.ok) {
-    el.innerHTML = `<div style="color:var(--accent3);font-size:11px">${res.error || 'Failed to load weather'}</div>`;
-    return;
-  }
-  const w = normalizeWeather(res.data);
-  const cond = w.weather?.[0];
-  const visMi = w.visibility != null ? `${(w.visibility / 1609.34).toFixed(1)} mi` : '--';
-  const wind  = w.wind_speed != null
-    ? `${Math.round(w.wind_speed)} mph ${w.wind_deg != null ? windDir(w.wind_deg) : ''}`
-    : '--';
-  const updated = w.dt ? new Date(w.dt * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
-  el.innerHTML = `
-    <div style="text-align:center;padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
-      ${cond ? `<img src="https://openweathermap.org/img/wn/${cond.icon}@2x.png" width="60" height="60" style="margin-bottom:2px">` : ''}
-      <div style="font-size:32px;font-weight:bold;color:var(--text);line-height:1">${w.temp != null ? Math.round(w.temp) + '°F' : '--'}</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:4px;text-transform:capitalize">${cond?.description || ''}</div>
-      ${w.feels_like != null ? `<div style="font-size:10px;color:var(--text3);margin-top:2px">Feels like ${Math.round(w.feels_like)}°F</div>` : ''}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
-      <div class="wx-stat"><div class="wx-lbl">WIND</div><div class="wx-val" style="font-size:12px">${wind}</div></div>
-      <div class="wx-stat"><div class="wx-lbl">HUMIDITY</div><div class="wx-val">${w.humidity != null ? w.humidity + '%' : '--'}</div></div>
-      <div class="wx-stat"><div class="wx-lbl">VISIBILITY</div><div class="wx-val">${visMi}</div></div>
-      <div class="wx-stat"><div class="wx-lbl">CLOUDS</div><div class="wx-val">${w.clouds != null ? w.clouds + '%' : '--'}</div></div>
-    </div>
-    ${updated ? `<div style="font-size:9px;color:var(--text3);text-align:center;margin-top:4px">Updated ${updated}</div>` : ''}`;
-}
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.getElementById('edit-modal')?.classList.add('hidden');
