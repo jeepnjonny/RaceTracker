@@ -91,7 +91,12 @@ body {
   text-transform: uppercase;
   white-space: nowrap;
 }
-#topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+#topbar-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+@media (max-width: 600px) {
+  #topbar { flex-wrap: wrap; min-height: unset; }
+  #topbar-right { margin-left: 0; width: 100%; }
+}
 
 /* ── STATUS PILLS ────────────────────────────────────────────────────────── */
 .pill {
