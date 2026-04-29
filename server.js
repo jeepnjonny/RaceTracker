@@ -43,6 +43,13 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 
+// Tunnel DELETE via POST + X-HTTP-Method-Override header (avoids ISP DPI blocks on DELETE method)
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.headers['x-http-method-override'] === 'DELETE')
+    req.method = 'DELETE';
+  next();
+});
+
 // ── Static files ─────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 

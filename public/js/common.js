@@ -32,8 +32,9 @@ const RT = (() => {
   }
 
   // ── API helpers ───────────────────────────────────────────────────────────
-  async function api(method, url, body) {
+  async function api(method, url, body, methodOverride) {
     const opts = { method, headers: {} };
+    if (methodOverride) opts.headers['X-HTTP-Method-Override'] = methodOverride;
     if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
@@ -42,10 +43,10 @@ const RT = (() => {
     return res.json();
   }
 
-  const get  = url        => api('GET',    url);
-  const post = (url, b)   => api('POST',   url, b);
-  const put  = (url, b)   => api('PUT',    url, b);
-  const del  = url        => api('DELETE', url);
+  const get  = url        => api('GET',  url);
+  const post = (url, b)   => api('POST', url, b);
+  const put  = (url, b)   => api('PUT',  url, b);
+  const del  = url        => api('POST', url, undefined, 'DELETE');
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
   function connectWS(onMessage, tokenParam) {
