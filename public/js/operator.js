@@ -971,9 +971,14 @@ async function fetchWxData() {
   if (!race?.weather_enabled) return;
   const res = await RT.get(`/api/races/${race.id}/weather`);
   if (res.ok && res.data) {
-    wxData = normalizeWeather(res.data);
-    wxError = null;
-    wxDataTs = Date.now();
+    const normalized = normalizeWeather(res.data);
+    if (normalized) {
+      wxData = normalized;
+      wxError = null;
+      wxDataTs = Date.now();
+    } else {
+      wxError = res.data?.message || 'Invalid weather response from server';
+    }
   } else {
     wxError = res.error || 'Failed to load weather data';
   }
@@ -1026,6 +1031,8 @@ function windDir(deg) {
 }
 
 function normalizeWeather(data) {
+  // OWM error response (cod != 200 or "200")
+  if (data.cod && String(data.cod) !== '200') return null;
   if (data.current) {
     const c = data.current;
     return { temp: c.temp, feels_like: c.feels_like, humidity: c.humidity,
