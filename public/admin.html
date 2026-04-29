@@ -26,16 +26,28 @@
     background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; cursor: pointer; }
   .race-card:hover { border-color: var(--accent); }
   .race-card.active-race { border-color: var(--accent2); }
+  .race-card.selected-race { background: var(--surface3, #161b22); }
   .infra-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px;
     border-bottom: 1px solid var(--border); font-size: 11px; }
   .infra-node { color: var(--accent4); font-weight: bold; min-width: 100px; }
   .icon-preview { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
   .log-ch-btn { padding: 3px 12px; font-size: 10px; letter-spacing: 1px; background: var(--surface2); border: 1px solid var(--border); color: var(--text3); border-radius: 4px; cursor: pointer; }
   .log-ch-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  #race-context-bar {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 12px; display: flex; align-items: center; gap: 0;
+  }
+  .race-context-label {
+    display: flex; flex-direction: column; gap: 1px;
+    min-width: 140px; max-width: 220px; padding-right: 14px;
+    border-right: 1px solid var(--border); margin-right: 8px; flex-shrink: 0;
+  }
+  #race-tabs { display: flex; gap: 2px; flex-wrap: wrap; }
   @media (max-width: 700px) {
     #admin-content > div[style*="grid-template-columns:300px"] {
       display: flex !important; flex-direction: column;
     }
+    .race-context-label { min-width: 100px; max-width: 130px; }
   }
 </style>
 </head>
@@ -54,6 +66,13 @@
 <div id="main">
   <div class="admin-wrap">
     <div class="admin-tabs" id="admin-tabs"></div>
+    <div id="race-context-bar" class="hidden">
+      <div class="race-context-label">
+        <span style="font-size:9px;letter-spacing:1.5px;color:var(--text3)">CONFIGURING</span>
+        <span id="race-context-name" style="font-size:12px;font-weight:bold;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
+      </div>
+      <div id="race-tabs"></div>
+    </div>
     <div id="admin-content"></div>
   </div>
 </div>

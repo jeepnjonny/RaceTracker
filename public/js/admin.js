@@ -4,16 +4,18 @@ let races = [], activeRaceId = null;
 let editingRaceId = null, editingUserId = null, editingHeatId = null;
 let selectedRaceId = null; // race being configured in sub-tabs
 
-const TABS = [
-  { id: 'races',        label: 'RACES' },
+const GLOBAL_TABS = [
+  { id: 'races',    label: 'RACES' },
+  { id: 'infra',    label: 'INFRASTRUCTURE' },
+  { id: 'users',    label: 'USERS' },
+  { id: 'settings', label: 'SETTINGS' },
+  { id: 'logs',     label: 'LOGS' },
+];
+const RACE_TABS = [
   { id: 'heats',        label: 'HEATS/CLASSES' },
   { id: 'participants', label: 'PARTICIPANTS' },
   { id: 'course',       label: 'COURSE' },
   { id: 'personnel',    label: 'PERSONNEL' },
-  { id: 'infra',        label: 'INFRASTRUCTURE' },
-  { id: 'users',        label: 'USERS' },
-  { id: 'settings',     label: 'SETTINGS' },
-  { id: 'logs',         label: 'LOGS' },
 ];
 let currentTab = 'races';
 
@@ -29,16 +31,29 @@ async function init() {
 }
 
 function buildTabs() {
-  const wrap = document.getElementById('admin-tabs');
-  wrap.innerHTML = TABS.map(t =>
+  document.getElementById('admin-tabs').innerHTML = GLOBAL_TABS.map(t =>
     `<button class="admin-tab${t.id===currentTab?' active':''}" onclick="showTab('${t.id}')">${t.label}</button>`
   ).join('');
+  const raceTabs = document.getElementById('race-tabs');
+  if (raceTabs) raceTabs.innerHTML = RACE_TABS.map(t =>
+    `<button class="admin-tab${t.id===currentTab?' active':''}" onclick="showTab('${t.id}')">${t.label}</button>`
+  ).join('');
+  const race = races.find(r => r.id === selectedRaceId);
+  const nameEl = document.getElementById('race-context-name');
+  if (nameEl) nameEl.textContent = race ? race.name.toUpperCase() : '';
+  const bar = document.getElementById('race-context-bar');
+  if (bar) bar.classList.toggle('hidden', !selectedRaceId);
 }
 
 function showTab(id) {
   currentTab = id;
-  document.querySelectorAll('.admin-tab').forEach(b => b.classList.toggle('active', b.textContent === TABS.find(t=>t.id===id)?.label));
+  buildTabs();
   renderTab();
+}
+
+function configureRace(id) {
+  selectedRaceId = id;
+  showTab('participants');
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -79,7 +94,6 @@ async function loadRaces() {
   races = res.data;
   const active = races.find(r => r.status === 'active');
   activeRaceId = active?.id || null;
-  if (!selectedRaceId && races.length) selectedRaceId = races[0].id;
   document.getElementById('active-race-pill').textContent = active ? active.name.toUpperCase() : 'NO ACTIVE RACE';
   document.getElementById('active-race-pill').className = active ? 'pill pill-ok' : 'pill pill-idle';
 }
@@ -119,30 +133,28 @@ function renderRaceList() {
   if (!el) return;
   if (!races.length) { el.innerHTML = '<div class="text-dim" style="padding:12px;font-size:12px">No races yet.</div>'; return; }
   el.innerHTML = races.map(r => `
-    <div class="race-card ${r.status==='active'?'active-race':''}" onclick="selectRace(${r.id})">
+    <div class="race-card ${r.status==='active'?'active-race':''}${r.id===selectedRaceId?' selected-race':''}">
       <div style="flex:1">
         <div style="font-weight:bold;color:${r.status==='active'?'var(--accent2)':'var(--text)'}">${r.name}</div>
         <div class="text-dim" style="font-size:10px">${r.date} · ${r.participant_count||0} participants</div>
       </div>
       <span class="badge" style="background:${r.status==='active'?'#3fb95022':r.status==='past'?'#48505822':'#58a6ff22'};color:${r.status==='active'?'var(--accent2)':r.status==='past'?'var(--text3)':'var(--accent)'}">${r.status.toUpperCase()}</span>
-      <div style="display:flex;gap:4px">
-        ${r.status!=='active'?`<button onclick="event.stopPropagation();activateRace(${r.id})" class="success" style="font-size:10px;padding:3px 8px">ACTIVATE</button>`:''}
-        ${r.status==='active'?`<button onclick="event.stopPropagation();deactivateRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEACTIVATE</button>`:''}
-        <button onclick="event.stopPropagation();openRaceModal(${r.id})" style="font-size:10px;padding:3px 8px">EDIT</button>
-        <button onclick="event.stopPropagation();cloneRace(${r.id})" style="font-size:10px;padding:3px 8px">CLONE</button>
-        ${r.viewer_token?`<button onclick="event.stopPropagation();copyViewerLink('${r.viewer_token}')" style="font-size:10px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
-         <button onclick="event.stopPropagation();revokeViewerToken(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">REVOKE</button>`
-         :`<button onclick="event.stopPropagation();genViewerToken(${r.id})" style="font-size:10px;padding:3px 8px">GEN VIEWER</button>`}
-        ${r.status!=='active'?`<button onclick="event.stopPropagation();deleteRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEL</button>`:''}
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${r.status!=='active'?`<button onclick="activateRace(${r.id})" class="success" style="font-size:10px;padding:3px 8px">ACTIVATE</button>`:''}
+        ${r.status==='active'?`<button onclick="deactivateRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEACTIVATE</button>`:''}
+        <button onclick="openRaceModal(${r.id})" style="font-size:10px;padding:3px 8px">EDIT</button>
+        <button onclick="configureRace(${r.id})" class="primary" style="font-size:10px;padding:3px 8px">CONFIGURE</button>
+        <button onclick="cloneRace(${r.id})" style="font-size:10px;padding:3px 8px">CLONE</button>
+        ${r.viewer_token?`<button onclick="copyViewerLink('${r.viewer_token}')" style="font-size:10px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
+         <button onclick="revokeViewerToken(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">REVOKE</button>`
+         :`<button onclick="genViewerToken(${r.id})" style="font-size:10px;padding:3px 8px">GEN VIEWER</button>`}
+        ${r.status!=='active'?`<button onclick="deleteRace(${r.id})" class="danger" style="font-size:10px;padding:3px 8px">DEL</button>`:''}
       </div>
     </div>
   `).join('');
 }
 
-function selectRace(id) {
-  selectedRaceId = id;
-  renderTab();
-}
+
 
 async function activateRace(id) {
   if (!confirm('Activate this race? The current active race (if any) will be set to past.')) return;
@@ -258,21 +270,9 @@ async function saveRace() {
   if (res.ok) {
     closeModal('race-modal');
     if (!editingRaceId && res.data?.id) {
-      selectedRaceId = res.data.id;
       await loadRaces();
-      if (_seedingFromCourse) {
-        _seedingFromCourse = false;
-        // Stay on course tab — just refresh the seed dropdown with the new race selected
-        const sel = document.getElementById('seed-race-sel');
-        if (sel) {
-          sel.innerHTML = '<option value="__new__" style="color:var(--accent)">+ NEW RACE…</option>' +
-            races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
-        }
-        RT.toast(`Race "${res.data.name}" created — select SEED STATIONS to continue`, 'ok');
-      } else {
-        showTab('course');
-        RT.toast('Race created — assign a course and seed aid stations below', 'ok');
-      }
+      configureRace(res.data.id);
+      RT.toast('Race created — configure heats, participants, course, and stations below', 'ok');
     } else {
       RT.toast('Race updated', 'ok');
       await loadRaces(); renderTab();
@@ -284,12 +284,7 @@ async function saveRace() {
 let heats = [], classes = [];
 
 function renderHeatsTab() {
-  const opts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
   return `
-  <div class="card">
-    <h3>SELECT RACE</h3>
-    <select id="hc-race-sel" onchange="selectedRaceId=parseInt(this.value);loadHeatsClasses()">${opts}</select>
-  </div>
   <div class="card">
     <h3>HEATS <span class="text-dim">(groups with icon/color)</span></h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -405,7 +400,6 @@ let csvFilesList = [], selectedCsvId = null;
 let courseParseData = null; // { paths, points, trackPoints, totalDistance, pathIndex }
 
 function renderCourseTab() {
-  const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
   return `
   <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:12px;align-items:start">
     <!-- Left: course file list -->
@@ -456,9 +450,7 @@ function renderCourseTab() {
   </div>
 
   <div class="card" style="margin-top:12px">
-    <h3>RACE STATIONS
-      <select id="st-race-sel" onchange="selectedRaceId=parseInt(this.value);loadStations()" style="margin-left:12px;font-size:11px;padding:3px 6px">${raceOpts}</select>
-    </h3>
+    <h3>RACE STATIONS</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="primary" onclick="openStationModal()">+ ADD</button>
       <button onclick="showInlineCsvImport()">CSV IMPORT</button>
@@ -543,7 +535,6 @@ function renderCourseDetail(el, course) {
   const hasPaths = d.paths?.length > 1;
   const dist = d.totalDistance ? RT.fmtDist(d.totalDistance) : '—';
   const svg = buildCourseSVG(d.trackPoints, 520, 200);
-  const raceOpts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name}</option>`).join('');
   const wpts = d.points || [];
 
   el.innerHTML = `
@@ -590,25 +581,11 @@ function renderCourseDetail(el, course) {
         </div>`).join('')}
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-        <label style="font-size:11px;color:var(--text3)">SEED TO RACE:</label>
-        <select id="seed-race-sel" style="flex:1" onchange="onSeedRaceChange(this)">
-          <option value="__new__" style="color:var(--accent)">+ NEW RACE…</option>
-          ${raceOpts}
-        </select>
-        <button class="primary" onclick="seedWaypointsToRace()" style="font-size:10px;padding:4px 10px">SEED STATIONS</button>
+        <button class="primary" onclick="seedWaypointsToRace()" style="font-size:10px;padding:4px 10px">SEED STATIONS TO RACE</button>
       </div>
     </div>` : `<div class="text-dim" style="font-size:11px;margin-top:10px">No waypoints/POIs in this file. Use the CSV library to import station coordinates.</div>`}`;
 }
 
-let _seedingFromCourse = false;
-
-function onSeedRaceChange(sel) {
-  if (sel.value !== '__new__') return;
-  // Reset to first real race (or keep __new__ if none exist)
-  if (races.length) sel.value = String(races[0].id);
-  _seedingFromCourse = true;
-  openRaceModal();
-}
 
 async function autoCreateStartFinish() {
   const pts = courseParseData?.trackPoints;
@@ -680,7 +657,7 @@ async function deleteCourse(id) {
 }
 
 async function seedWaypointsToRace() {
-  const raceId = parseInt(document.getElementById('seed-race-sel').value);
+  const raceId = selectedRaceId;
   const wpts = courseParseData?.points || [];
   const waypoints = wpts
     .map((w, i) => ({ ...w, type: document.getElementById(`wpt-type-${i}`)?.value || 'aid', checked: document.getElementById(`wpt-${i}`)?.checked }))
@@ -912,13 +889,9 @@ let participants = [], participantsCsvContent = '';
 let editingParticipantId = null;
 
 function renderParticipantsTab() {
-  const opts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name} (${r.date})</option>`).join('');
   return `
   <div class="card">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <h3 style="margin:0">PARTICIPANTS</h3>
-      <select id="pt-race-sel" onchange="selectedRaceId=parseInt(this.value);loadParticipants()" style="margin-left:4px;font-size:11px;padding:3px 6px">${opts}</select>
-    </div>
+    <h3>PARTICIPANTS</h3>
     <div id="pt-summary" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"></div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="primary" onclick="openParticipantModal()">+ ADD</button>
@@ -1160,12 +1133,7 @@ function exportParticipantsCsv() {
 // ── Personnel ─────────────────────────────────────────────────────────────────
 let personnel = [], personnelCsvContent = '';
 function renderPersonnelTab() {
-  const opts = races.map(r => `<option value="${r.id}"${r.id===selectedRaceId?' selected':''}>${r.name}</option>`).join('');
   return `
-  <div class="card">
-    <h3>SELECT RACE</h3>
-    <select id="pers-race-sel" onchange="selectedRaceId=parseInt(this.value);loadPersonnel()">${opts}</select>
-  </div>
   <div class="card">
     <h3>AID STATION PERSONNEL</h3>
     <div style="display:flex;gap:8px;margin-bottom:10px">
