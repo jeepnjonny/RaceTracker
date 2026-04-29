@@ -775,15 +775,36 @@ function updateAprsPill(status) {
 function updateRacePill(r) {
   const pill = document.getElementById('race-pill');
   const overlay = document.getElementById('no-race-overlay');
+  const viewerBtn = document.getElementById('viewer-link-btn');
   if (!r) {
     pill.className = 'pill pill-idle';
     pill.textContent = 'NO RACE';
     if (overlay) overlay.style.display = 'flex';
+    if (viewerBtn) viewerBtn.classList.add('hidden');
     return;
   }
   pill.className = 'pill pill-ok';
   pill.textContent = r.name.toUpperCase();
   if (overlay) overlay.style.display = 'none';
+  if (viewerBtn && r.viewer_token) viewerBtn.classList.remove('hidden');
+}
+
+function showViewerLink() {
+  if (!race?.viewer_token) { RT.toast('No active race', 'warn'); return; }
+  const url = window.location.origin + RT.BASE + 'view/' + race.viewer_token;
+  document.getElementById('viewer-url').textContent = url;
+  const qrEl = document.getElementById('viewer-qr');
+  qrEl.innerHTML = '';
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(qrEl, { text: url, width: 180, height: 180 });
+  }
+  document.getElementById('viewer-link-modal').classList.remove('hidden');
+}
+
+function copyViewerLink() {
+  if (!race?.viewer_token) return;
+  const url = window.location.origin + RT.BASE + 'view/' + race.viewer_token;
+  navigator.clipboard.writeText(url).then(() => RT.toast('Copied!', 'ok'));
 }
 
 function checkStationWarnings() {
@@ -1167,11 +1188,14 @@ function normalizeWeather(data) {
 
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') document.getElementById('edit-modal')?.classList.add('hidden');
+  if (e.key === 'Escape') {
+    document.getElementById('edit-modal')?.classList.add('hidden');
+    document.getElementById('viewer-link-modal')?.classList.add('hidden');
+  }
 });
 
 init();
 
 return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipant,
-         openEditModal, sendMessage, dismissAlert };
+         openEditModal, sendMessage, dismissAlert, showViewerLink, copyViewerLink };
 })();
