@@ -90,6 +90,20 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
   }
 });
 
+router.put('/', requireRole('admin', 'operator'), (req, res) => {
+  const { ids, field, value } = req.body;
+  const allowed = ['heat_id', 'class_id', 'status'];
+  if (!Array.isArray(ids) || !ids.length || !allowed.includes(field))
+    return res.status(400).json({ ok: false, error: 'ids array and valid field required' });
+  const stmt = db.prepare(`UPDATE participants SET ${field}=? WHERE id=? AND race_id=?`);
+  const tx = db.transaction(() => { for (const id of ids) stmt.run(value ?? null, id, req.params.raceId); });
+  tx();
+  wsManager.broadcast({ type: 'participant_update', data: { action: 'bulk_update' } });
+  if (field !== 'status') aprsClient.notifyRosterChange();
+  logger.log('race', 'info', `Bulk update ${field} on ${ids.length} participant(s)`);
+  res.json({ ok: true, updated: ids.length });
+});
+
 router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
   const p = db.prepare('SELECT * FROM participants WHERE id=? AND race_id=?').get(req.params.id, req.params.raceId);
   if (!p) return res.status(404).json({ ok: false, error: 'Participant not found' });

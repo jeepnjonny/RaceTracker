@@ -881,6 +881,7 @@ async function deleteStation(id) {
 // ── Participants ──────────────────────────────────────────────────────────────
 let participants = [], participantsCsvContent = '';
 let editingParticipantId = null;
+let selectedParticipantIds = new Set();
 
 function renderParticipantsTab() {
   return `
@@ -892,6 +893,17 @@ function renderParticipantsTab() {
       <button onclick="togglePtCsvPanel()">CSV IMPORT</button>
       <button onclick="exportParticipantsCsv()">CSV EXPORT</button>
       <button class="danger" onclick="clearAllParticipants()" style="margin-left:auto">CLEAR ALL</button>
+    </div>
+    <div id="pt-bulk-bar" class="hidden" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:8px;background:var(--surface2);border:1px solid var(--accent);border-radius:6px;flex-wrap:wrap">
+      <span id="pt-bulk-count" style="font-size:12px;color:var(--accent);min-width:70px;white-space:nowrap"></span>
+      <select id="pt-bulk-field" onchange="updateBulkValueOptions()" style="font-size:12px">
+        <option value="heat_id">Set Heat</option>
+        <option value="class_id">Set Class</option>
+        <option value="status">Set Status</option>
+      </select>
+      <select id="pt-bulk-value" style="font-size:12px;min-width:120px"></select>
+      <button class="primary" onclick="applyBulkAction()" style="font-size:12px;padding:4px 12px">APPLY</button>
+      <button onclick="clearParticipantSelection()" style="font-size:12px;padding:4px 12px">DESELECT ALL</button>
     </div>
     <div id="pt-csv-panel" class="hidden" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:10px">
       <div style="font-size:12px;color:var(--text3);margin-bottom:6px">
@@ -947,18 +959,24 @@ function renderParticipantSummary() {
 function renderParticipantsList() {
   const el = document.getElementById('participants-list');
   if (!el) return;
+  selectedParticipantIds = new Set();
+  updateBulkBar();
   if (!participants.length) {
     el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No participants yet. Add manually or import a CSV.</div>';
     return;
   }
   const STATUS_C = { dns:'var(--text3)', active:'var(--accent)', dnf:'var(--accent3)', finished:'var(--accent2)' };
   el.innerHTML = `<table class="data-table">
-    <thead><tr><th>#</th><th>BIB</th><th>NAME</th><th>HEAT</th><th>CLASS</th><th>TRACKER</th><th>STATUS</th><th>AGE</th><th></th></tr></thead>
+    <thead><tr>
+      <th style="width:28px"><input type="checkbox" id="pt-select-all" onchange="toggleSelectAllParticipants(this.checked)" title="Select all"></th>
+      <th>#</th><th>BIB</th><th>NAME</th><th>HEAT</th><th>CLASS</th><th>TRACKER</th><th>STATUS</th><th>AGE</th><th></th>
+    </tr></thead>
     <tbody>${participants.map((p, i) => {
       const heat = heats.find(h => h.id === p.heat_id);
       const cls  = classes.find(c => c.id === p.class_id);
       const dot  = heat ? `<span class="dot" style="background:${heat.color}"></span>` : '';
-      return `<tr>
+      return `<tr id="pt-row-${p.id}">
+        <td><input type="checkbox" onchange="toggleParticipantSelect(${p.id}, this.checked)"></td>
         <td class="text-dim">${i+1}</td>
         <td style="font-weight:bold">${p.bib}</td>
         <td>${p.name}</td>
@@ -973,6 +991,78 @@ function renderParticipantsList() {
         </td>
       </tr>`;
     }).join('')}</tbody></table>`;
+}
+
+function toggleParticipantSelect(id, checked) {
+  if (checked) selectedParticipantIds.add(id);
+  else selectedParticipantIds.delete(id);
+  const row = document.getElementById(`pt-row-${id}`);
+  if (row) row.style.background = checked ? 'var(--surface3,#161b22)' : '';
+  const allBox = document.getElementById('pt-select-all');
+  if (allBox) allBox.checked = selectedParticipantIds.size === participants.length;
+  updateBulkBar();
+}
+
+function toggleSelectAllParticipants(checked) {
+  participants.forEach(p => {
+    const cb = document.querySelector(`#pt-row-${p.id} input[type=checkbox]`);
+    if (cb) cb.checked = checked;
+    const row = document.getElementById(`pt-row-${p.id}`);
+    if (row) row.style.background = checked ? 'var(--surface3,#161b22)' : '';
+    if (checked) selectedParticipantIds.add(p.id);
+    else selectedParticipantIds.delete(p.id);
+  });
+  updateBulkBar();
+}
+
+function clearParticipantSelection() {
+  toggleSelectAllParticipants(false);
+  const allBox = document.getElementById('pt-select-all');
+  if (allBox) allBox.checked = false;
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('pt-bulk-bar');
+  const count = document.getElementById('pt-bulk-count');
+  if (!bar) return;
+  const n = selectedParticipantIds.size;
+  if (n === 0) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  count.textContent = `${n} selected`;
+  updateBulkValueOptions();
+}
+
+function updateBulkValueOptions() {
+  const field = document.getElementById('pt-bulk-field')?.value;
+  const sel = document.getElementById('pt-bulk-value');
+  if (!sel || !field) return;
+  if (field === 'heat_id') {
+    sel.innerHTML = '<option value="">— None —</option>' +
+      heats.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+  } else if (field === 'class_id') {
+    sel.innerHTML = '<option value="">— None —</option>' +
+      classes.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  } else {
+    sel.innerHTML = ['dns','active','dnf','finished']
+      .map(s => `<option value="${s}">${s.toUpperCase()}</option>`).join('');
+  }
+}
+
+async function applyBulkAction() {
+  const field = document.getElementById('pt-bulk-field')?.value;
+  const rawVal = document.getElementById('pt-bulk-value')?.value;
+  const ids = [...selectedParticipantIds];
+  if (!ids.length || !field) return;
+  const value = (field === 'heat_id' || field === 'class_id')
+    ? (rawVal ? parseInt(rawVal) : null)
+    : rawVal;
+  const res = await RT.put(`/api/races/${selectedRaceId}/participants`, { ids, field, value });
+  if (res.ok) {
+    RT.toast(`Updated ${res.updated} participant(s)`, 'ok');
+    await loadParticipants();
+  } else {
+    RT.toast(res.error || 'Bulk update failed', 'warn');
+  }
 }
 
 function openParticipantModal(id) {
