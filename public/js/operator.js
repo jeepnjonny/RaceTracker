@@ -5,8 +5,9 @@ let race = null, participants = {}, stations = [], heats = {}, classes = {};
 let personnel = [], messages = [];
 let markerLayer = null, routeLayer = null, stationMarkers = {}, trackPoints = null;
 let leafletMap = null, currentBaseLayer = null, weatherLayersControl = null, weatherLegendControl = null;
-let activeWeatherOverlays = new Set(), wxRefreshTimer = null, wxPoller = null;
-let wxData = null, wxDataTs = 0, radarLayer = null, owmKey = null;
+let activeWeatherOverlays = new Set(), wxPoller = null;
+let wxData = null, wxError = null, wxDataTs = 0, radarLayer = null, owmKey = null;
+let wxSetupInProgress = false;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
 let alerts = [], rightTab = 'info';
 
@@ -144,10 +145,6 @@ async function loadInitialData() {
   updateStats();
   checkStationWarnings();
   loadTrackData();
-
-  // Set up weather map layers via REST path (WS path uses handleInit → setupWeatherLayers)
-  const wxKeyRes = await RT.get('/api/weather/key');
-  if (wxKeyRes.ok) setupWeatherLayers(wxKeyRes.data?.key || null);
 }
 
 async function loadTrackData() {
@@ -179,6 +176,8 @@ function setBaseLayer(name) {
 }
 
 async function setupWeatherLayers(key) {
+  if (wxSetupInProgress) return;
+  wxSetupInProgress = true;
   owmKey = key;
   if (weatherLayersControl) { leafletMap.removeControl(weatherLayersControl); weatherLayersControl = null; }
   if (weatherLegendControl) { leafletMap.removeControl(weatherLegendControl); weatherLegendControl = null; }
@@ -213,6 +212,7 @@ async function setupWeatherLayers(key) {
     weatherLegendControl = createWeatherLegendControl();
     weatherLegendControl.addTo(leafletMap);
   }
+  wxSetupInProgress = false;
   // Refresh RainViewer radar frame every 10 minutes
   setInterval(refreshRadarLayer, 10 * 60 * 1000);
 }
@@ -972,9 +972,12 @@ async function fetchWxData() {
   const res = await RT.get(`/api/races/${race.id}/weather`);
   if (res.ok && res.data) {
     wxData = normalizeWeather(res.data);
+    wxError = null;
     wxDataTs = Date.now();
-    if (rightTab === 'weather') renderWeatherPanel();
+  } else {
+    wxError = res.error || 'Failed to load weather data';
   }
+  if (rightTab === 'weather') renderWeatherPanel();
 }
 
 function renderWeatherPanel() {
@@ -984,9 +987,12 @@ function renderWeatherPanel() {
     el.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:4px">Weather not enabled for this race.</div>';
     return;
   }
+  if (wxError && !wxData) {
+    el.innerHTML = `<div style="color:var(--accent3);font-size:11px;padding:4px">${wxError}</div>`;
+    return;
+  }
   if (!wxData) {
     el.innerHTML = '<div style="color:var(--text3);font-size:11px">Loading…</div>';
-    fetchWxData();
     return;
   }
   const w = wxData;
