@@ -124,7 +124,7 @@ function handleInit(data) {
     participants[p.id] = enrichParticipant(p, data.registry || []);
   });
 
-  if (data.trackPoints?.length) trackPoints = data.trackPoints;
+  if (data.trackPoints?.length) { trackPoints = data.trackPoints; _cachedDists = null; _total = null; _stationAlongCache = null; }
   renderRoute();
   renderStationMarkers();
   renderAllMarkers();
@@ -205,11 +205,20 @@ function handlePosition(data) {
 }
 
 function handleEvent(data) {
-  const p = participants[data.participantId];
+  const p = participants[data.participant_id];
   if (!p) return;
-  if (data.event_type === 'start')  p.status = 'active';
+  if (data.event_type === 'start')  { p.status = 'active';   p.start_time = data.timestamp; }
   if (data.event_type === 'finish') p.status = 'finished';
   if (data.event_type === 'dnf')    p.status = 'dnf';
+  if (data.has_turnaround && !p.has_turnaround) {
+    p.has_turnaround = true;
+    const td = _total || computeTotal();
+    if (td) { p._lastAlong = td; p._lastAlongTs = data.timestamp; }
+  }
+  if (data.station_id && !p.has_turnaround) {
+    const along = getStationAlongMap().get(data.station_id);
+    if (along != null) p._stationFloor = Math.max(p._stationFloor ?? 0, along);
+  }
   renderLeaderboard();
 }
 
@@ -256,23 +265,44 @@ function renderLeaderboard() {
 }
 
 function computePct(p) {
-  // Without server-side calculation, derive from last_lat if trackPoints available
+  if (p.status === 'finished') return 100;
+  if (p.status === 'dns') return null;
   if (!p.last_lat || !trackPoints || !trackPoints.length) return null;
-  let minD = Infinity, best = 0, total = 0;
-  const dists = [0];
-  for (let i = 1; i < trackPoints.length; i++) {
-    const d = haversine(trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]);
-    total += d; dists.push(total);
-  }
+  ensureDistCache();
+  const totalDist = _total;
+  if (!totalDist) return 0;
+
+  // Option B: constrain search to reachable window given max race speed
+  const now = Math.floor(Date.now() / 1000);
+  const lastAlong = p._lastAlong ?? 0;
+  const lastTs = p._lastAlongTs ?? (p.start_time || now);
+  const travelDist = Math.max(0, now - lastTs) * MAX_RACE_SPEED + BACK_MARGIN;
+  const windowMin = Math.max(0, lastAlong - travelDist);
+  const windowMax = Math.min(totalDist, lastAlong + travelDist);
+
+  let minD = Infinity, bestAlong = lastAlong;
   for (let i = 0; i < trackPoints.length - 1; i++) {
+    if (_cachedDists[i+1] < windowMin || _cachedDists[i] > windowMax) continue;
     const [lat1,lon1] = trackPoints[i], [lat2,lon2] = trackPoints[i+1];
-    const segLen = dists[i+1] - dists[i];
+    const segLen = _cachedDists[i+1] - _cachedDists[i];
     const ax = p.last_lat - lat1, ay = p.last_lon - lon1, bx = lat2-lat1, by = lon2-lon1;
     const t = Math.max(0, Math.min(1, (ax*bx+ay*by)/Math.max(1e-10, bx*bx+by*by)));
     const d = haversine(p.last_lat, p.last_lon, lat1+t*bx, lon1+t*by);
-    if (d < minD) { minD = d; best = (dists[i] + t*segLen) / total * 100; }
+    if (d < minD) { minD = d; bestAlong = _cachedDists[i] + t * segLen; }
   }
-  return Math.min(100, best);
+
+  // Option C: checkpoint floor (outbound leg only)
+  if (!(race?.race_format === 'out_and_back' && p.has_turnaround))
+    bestAlong = Math.max(bestAlong, p._stationFloor ?? 0);
+
+  p._lastAlong = bestAlong;
+  p._lastAlongTs = p.registry?.last_seen || now;
+
+  if (race?.race_format === 'out_and_back') {
+    if (p.has_turnaround) return Math.min(100, (2 * totalDist - bestAlong) / (2 * totalDist) * 100);
+    return Math.min(50, bestAlong / (2 * totalDist) * 100);
+  }
+  return Math.min(100, bestAlong / totalDist * 100);
 }
 
 function fmtPace(p) {
@@ -284,14 +314,41 @@ function fmtPace(p) {
   return RT.fmtPace(ms);
 }
 
-let _total = null;
+let _total = null, _cachedDists = null, _stationAlongCache = null;
+const MAX_RACE_SPEED = 8, BACK_MARGIN = 100;
+
 function computeTotal() {
-  if (_total) return _total;
-  if (!trackPoints || trackPoints.length < 2) return 0;
-  let d = 0;
+  ensureDistCache();
+  return _total || 0;
+}
+
+function ensureDistCache() {
+  if (_cachedDists || !trackPoints || trackPoints.length < 2) return;
+  _cachedDists = [0];
   for (let i = 1; i < trackPoints.length; i++)
-    d += haversine(trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]);
-  _total = d; return d;
+    _cachedDists.push(_cachedDists[i-1] + haversine(
+      trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]));
+  _total = _cachedDists[_cachedDists.length - 1];
+}
+
+function getStationAlongMap() {
+  if (_stationAlongCache) return _stationAlongCache;
+  if (!trackPoints || trackPoints.length < 2) return new Map();
+  ensureDistCache();
+  _stationAlongCache = new Map();
+  for (const s of stations) {
+    if (!s.lat || !s.lon) continue;
+    let minD = Infinity, best = 0;
+    for (let i = 0; i < trackPoints.length - 1; i++) {
+      const [lat1,lon1] = trackPoints[i], [lat2,lon2] = trackPoints[i+1];
+      const ax = s.lat - lat1, ay = s.lon - lon1, bx = lat2-lat1, by = lon2-lon1;
+      const t = Math.max(0, Math.min(1, (ax*bx+ay*by)/Math.max(1e-10, bx*bx+by*by)));
+      const d = haversine(s.lat, s.lon, lat1+t*bx, lon1+t*by);
+      if (d < minD) { minD = d; best = _cachedDists[i] + t*(_cachedDists[i+1]-_cachedDists[i]); }
+    }
+    _stationAlongCache.set(s.id, best);
+  }
+  return _stationAlongCache;
 }
 
 function haversine(lat1, lon1, lat2, lon2) {

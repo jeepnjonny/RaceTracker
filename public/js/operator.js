@@ -99,7 +99,7 @@ function handleInit(data) {
     participants[p.id] = enrichParticipant(p, data.registry || []);
   });
 
-  if (data.trackPoints?.length) trackPoints = data.trackPoints;
+  if (data.trackPoints?.length) { trackPoints = data.trackPoints; _cachedDists = null; _cachedTotalDist = null; _stationAlongCache = null; }
   renderRoute();
   renderStationMarkers();
   renderAllMarkers();
@@ -153,6 +153,7 @@ async function loadTrackData() {
   const res = await RT.get(`/api/races/${race.id}/tracks/parse`);
   if (res.ok && res.data?.trackPoints) {
     trackPoints = res.data.trackPoints;
+    _cachedDists = null; _cachedTotalDist = null; _stationAlongCache = null;
     document.getElementById('stat-dist').textContent = RT.fmtDist(res.data.totalDistance);
     renderRoute();
   }
@@ -359,25 +360,39 @@ function renderLeaderboard() {
 const STATUS_COLORS = { dns: '#484f58', active: '#58a6ff', dnf: '#f78166', finished: '#3fb950' };
 
 function computePercent(p) {
+  if (p.status === 'finished') return 100;
+  if (p.status === 'dns') return null;
   if (!p.last_lat || !p.last_lon || !trackPoints || !trackPoints.length) return null;
-  let minD = Infinity, bestAlong = 0, totalDist = 0;
-  const dists = [0];
-  for (let i = 1; i < trackPoints.length; i++) {
-    const d = haversine(trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]);
-    totalDist += d; dists.push(totalDist);
-  }
+  ensureDistCache();
+  const totalDist = _cachedTotalDist;
   if (totalDist === 0) return 0;
+
+  // Option B: constrain search to reachable window given max race speed
+  const now = Math.floor(Date.now() / 1000);
+  const lastAlong = p._lastAlong ?? 0;
+  const lastTs = p._lastAlongTs ?? (p.start_time || now);
+  const travelDist = Math.max(0, now - lastTs) * MAX_RACE_SPEED + BACK_MARGIN;
+  const windowMin = Math.max(0, lastAlong - travelDist);
+  const windowMax = Math.min(totalDist, lastAlong + travelDist);
+
+  let minD = Infinity, bestAlong = lastAlong;
   for (let i = 0; i < trackPoints.length - 1; i++) {
-    const [lat1, lon1] = trackPoints[i], [lat2, lon2] = trackPoints[i + 1];
-    const segLen = dists[i + 1] - dists[i];
-    const t = clamp01(dot2(p.last_lat - lat1, p.last_lon - lon1, lat2 - lat1, lon2 - lon1) /
-      Math.max(1e-10, (lat2-lat1)**2 + (lon2-lon1)**2));
-    const closeLat = lat1 + t*(lat2-lat1), closeLon = lon1 + t*(lon2-lon1);
-    const d = haversine(p.last_lat, p.last_lon, closeLat, closeLon);
-    if (d < minD) { minD = d; bestAlong = dists[i] + t * segLen; }
+    if (_cachedDists[i+1] < windowMin || _cachedDists[i] > windowMax) continue;
+    const [lat1, lon1] = trackPoints[i], [lat2, lon2] = trackPoints[i+1];
+    const segLen = _cachedDists[i+1] - _cachedDists[i];
+    const ax = p.last_lat - lat1, ay = p.last_lon - lon1, bx = lat2-lat1, by = lon2-lon1;
+    const t = clamp01((ax*bx+ay*by)/Math.max(1e-10, bx*bx+by*by));
+    const d = haversine(p.last_lat, p.last_lon, lat1+t*bx, lon1+t*by);
+    if (d < minD) { minD = d; bestAlong = _cachedDists[i] + t * segLen; }
   }
-  // For out-and-back: full race = 2x one-way track.
-  // Outbound: 0–50%. Return leg (after turnaround): 50–100%.
+
+  // Option C: checkpoint floor prevents backwards jump (outbound leg only)
+  if (!(race?.race_format === 'out_and_back' && p.has_turnaround))
+    bestAlong = Math.max(bestAlong, p._stationFloor ?? 0);
+
+  p._lastAlong = bestAlong;
+  p._lastAlongTs = p.registry?.last_seen || now;
+
   if (race?.race_format === 'out_and_back') {
     if (p.has_turnaround) return Math.min(100, (2 * totalDist - bestAlong) / (2 * totalDist) * 100);
     return Math.min(50, bestAlong / (2 * totalDist) * 100);
@@ -397,15 +412,41 @@ function computePace(p) {
   return (pct / 100 * totalDist) / elapsed; // m/s
 }
 
-let _cachedTotalDist = null;
+let _cachedTotalDist = null, _cachedDists = null, _stationAlongCache = null;
+const MAX_RACE_SPEED = 8, BACK_MARGIN = 100;
+
 function computeTotalDist() {
-  if (_cachedTotalDist) return _cachedTotalDist;
-  if (!trackPoints || trackPoints.length < 2) return 0;
-  let d = 0;
+  ensureDistCache();
+  return _cachedTotalDist || 0;
+}
+
+function ensureDistCache() {
+  if (_cachedDists || !trackPoints || trackPoints.length < 2) return;
+  _cachedDists = [0];
   for (let i = 1; i < trackPoints.length; i++)
-    d += haversine(trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]);
-  _cachedTotalDist = d;
-  return d;
+    _cachedDists.push(_cachedDists[i-1] + haversine(
+      trackPoints[i-1][0], trackPoints[i-1][1], trackPoints[i][0], trackPoints[i][1]));
+  _cachedTotalDist = _cachedDists[_cachedDists.length - 1];
+}
+
+function getStationAlongMap() {
+  if (_stationAlongCache) return _stationAlongCache;
+  if (!trackPoints || trackPoints.length < 2) return new Map();
+  ensureDistCache();
+  _stationAlongCache = new Map();
+  for (const s of stations) {
+    if (!s.lat || !s.lon) continue;
+    let minD = Infinity, best = 0;
+    for (let i = 0; i < trackPoints.length - 1; i++) {
+      const [lat1, lon1] = trackPoints[i], [lat2, lon2] = trackPoints[i+1];
+      const ax = s.lat - lat1, ay = s.lon - lon1, bx = lat2-lat1, by = lon2-lon1;
+      const t = clamp01((ax*bx+ay*by)/Math.max(1e-10, bx*bx+by*by));
+      const d = haversine(s.lat, s.lon, lat1+t*bx, lon1+t*by);
+      if (d < minD) { minD = d; best = _cachedDists[i] + t*(_cachedDists[i+1]-_cachedDists[i]); }
+    }
+    _stationAlongCache.set(s.id, best);
+  }
+  return _stationAlongCache;
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -630,15 +671,27 @@ function handlePosition(data) {
 
 function handleEvent(data) {
   appendEventLog(data);
-  if (data.participantId && participants[data.participantId]) {
-    const p = participants[data.participantId];
+  const pid = data.participant_id;
+  if (pid && participants[pid]) {
+    const p = participants[pid];
     if (data.event_type === 'start')  { p.status = 'active';   p.start_time  = data.timestamp; }
     if (data.event_type === 'finish') { p.status = 'finished'; p.finish_time = data.timestamp; }
     if (data.event_type === 'dnf')      p.status = 'dnf';
-    if (data.has_turnaround)            p.has_turnaround = true;
-    if (data.participantId === selectedPId) showParticipantInfo(data.participantId);
+    if (data.has_turnaround && !p.has_turnaround) {
+      p.has_turnaround = true;
+      // Seed return-leg tracking at turnaround distance so window starts correctly
+      const td = _cachedTotalDist || computeTotalDist();
+      if (td) { p._lastAlong = td; p._lastAlongTs = data.timestamp; }
+    }
+    if (data.station_id && !p.has_turnaround) {
+      const along = getStationAlongMap().get(data.station_id);
+      if (along != null) p._stationFloor = Math.max(p._stationFloor ?? 0, along);
+    }
+    if (pid === selectedPId) showParticipantInfo(pid);
     renderLeaderboard();
   }
+  // Refresh station info panel in real-time when an arrival/departure comes in for the open station
+  if (data.station_id && data.station_id === selectedStationId) showStationInfo(selectedStationId);
 }
 
 function handleAlert(data) {

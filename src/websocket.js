@@ -78,7 +78,12 @@ function sendInit(ws, user) {
     const participants = db.prepare(`
       SELECT p.*, h.name as heat_name, h.color as heat_color, h.shape as heat_shape,
              c.name as class_name,
-             tr.last_lat, tr.last_lon, tr.battery_level, tr.last_seen
+             tr.last_lat, tr.last_lon, tr.battery_level, tr.last_seen,
+             EXISTS (
+               SELECT 1 FROM events e
+               JOIN stations s ON e.station_id = s.id
+               WHERE e.participant_id = p.id AND e.race_id = p.race_id AND s.type = 'turnaround'
+             ) as has_turnaround
       FROM participants p
       LEFT JOIN heats h ON p.heat_id = h.id
       LEFT JOIN classes c ON p.class_id = c.id

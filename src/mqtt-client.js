@@ -171,8 +171,34 @@ function findParticipant(nodeId, raceId) {
 // Geofence check: auto-log station timing events
 const recentGeofenceEvents = new Map(); // key: `${participantId}_${stationId}_arrive/depart`
 
+// Insert event, read back full joined row, then broadcast with consistent snake_case schema.
+function emitGeofenceEvent(raceId, participant, eventType, station, timestamp) {
+  const { lastInsertRowid } = db.prepare(
+    'INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)'
+  ).run(raceId, participant.id, eventType, station.id, timestamp);
+
+  const has_turnaround = !!(db.prepare(`
+    SELECT 1 FROM events WHERE participant_id=? AND race_id=?
+    AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround')
+    LIMIT 1`).get(participant.id, raceId, raceId));
+
+  const event = db.prepare(`
+    SELECT e.*, p.bib, p.name as participant_name, s.name as station_name
+    FROM events e
+    LEFT JOIN participants p ON e.participant_id = p.id
+    LEFT JOIN stations s ON e.station_id = s.id
+    WHERE e.id=?`).get(lastInsertRowid);
+
+  logger.log('race', 'info', `${eventType.toUpperCase()} — ${participant.name} (#${participant.bib}) at ${station.name}`);
+  broadcast('event', { ...event, has_turnaround });
+}
+
 function checkGeofences(participant, race, lat, lon, timestamp) {
-  if (!race.feat_auto_log && !race.feat_auto_start) return;
+  // Apply defaults before the guard so null columns (older races) behave the same as enabled.
+  const autoStart = race.feat_auto_start ?? 1;
+  const autoLog   = race.feat_auto_log   ?? 1;
+  if (!autoLog && !autoStart) return;
+
   const stations = db.prepare('SELECT * FROM stations WHERE race_id=? ORDER BY course_order').all(race.id);
   if (!stations.length) return;
 
@@ -191,9 +217,6 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
     const inside = dist <= radius;
     const arriveKey = `${participant.id}_${station.id}_arrive`;
     const departKey = `${participant.id}_${station.id}_depart`;
-
-    const autoStart = race.feat_auto_start ?? 1;
-    const autoLog   = race.feat_auto_log   ?? 1;
 
     if (inside && !recentGeofenceEvents.has(arriveKey)) {
       recentGeofenceEvents.set(arriveKey, timestamp);
@@ -236,14 +259,8 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
       // netcontrol and repeater: no geofencing
 
       if (eventType) {
-        db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
-          .run(race.id, participant.id, eventType, station.id, timestamp);
         if (statusSql) db.prepare(statusSql).run(...statusArgs);
-        const has_turnaround = station.type === 'turnaround' ||
-          !!(db.prepare(`SELECT 1 FROM events WHERE participant_id=? AND race_id=? AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround') LIMIT 1`)
-            .get(participant.id, race.id, race.id));
-        logger.log('race', 'info', `${eventType.toUpperCase()} — ${participant.name} (#${participant.bib}) at ${station.name}`);
-        broadcast('event', { raceId: race.id, participantId: participant.id, eventType, stationId: station.id, timestamp, has_turnaround });
+        emitGeofenceEvent(race.id, participant, eventType, station, timestamp);
       }
 
     } else if (!inside && recentGeofenceEvents.has(arriveKey) && !recentGeofenceEvents.has(departKey)) {
@@ -254,16 +271,10 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
         (station.type === 'start_finish' && participant.status === 'dns');
 
       if (isStartStation && participant.status === 'dns' && autoStart) {
-        db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
-          .run(race.id, participant.id, 'start', station.id, timestamp);
         db.prepare("UPDATE participants SET status='active', start_time=? WHERE id=?").run(timestamp, participant.id);
-        logger.log('race', 'info', `START — ${participant.name} (#${participant.bib}) departed ${station.name}`);
-        broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'start', stationId: station.id, timestamp, has_turnaround: false });
+        emitGeofenceEvent(race.id, participant, 'start', station, timestamp);
       } else if (!['start', 'finish', 'start_finish'].includes(station.type)) {
-        db.prepare('INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp) VALUES (?,?,?,?,?)')
-          .run(race.id, participant.id, 'aid_depart', station.id, timestamp);
-        logger.log('race', 'info', `AID_DEPART — ${participant.name} (#${participant.bib}) left ${station.name}`);
-        broadcast('event', { raceId: race.id, participantId: participant.id, eventType: 'aid_depart', stationId: station.id, timestamp });
+        emitGeofenceEvent(race.id, participant, 'aid_depart', station, timestamp);
       }
     }
   }
