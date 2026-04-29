@@ -10,9 +10,10 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
-db.pragma('synchronous = NORMAL');   // WAL mode makes NORMAL crash-safe; avoids double-fsync per commit
-db.pragma('cache_size = -65536');    // 64 MB page cache — reduce repeated disk reads
-db.pragma('temp_store = MEMORY');    // temp tables/indexes in RAM
+db.pragma('synchronous = NORMAL');     // WAL mode makes NORMAL crash-safe; avoids double-fsync per commit
+db.pragma('cache_size = -65536');      // 64 MB page cache — reduce repeated disk reads
+db.pragma('temp_store = MEMORY');      // temp tables/indexes in RAM
+db.pragma('wal_autocheckpoint = 200'); // checkpoint every 200 pages (~800 KB) instead of 1000 — keeps WAL small
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
