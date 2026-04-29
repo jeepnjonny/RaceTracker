@@ -351,6 +351,7 @@ function processJsonMessage(msg) {
       altitude: p.altitude,
       speed: p.ground_speed,
       heading: p.ground_track,
+      battery: p.battery_level ?? null,
       snr: msg.snr,
       rssi: msg.rssi,
       timestamp: ts,
