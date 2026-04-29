@@ -61,6 +61,26 @@ function parsePosition(body) {
   return null;
 }
 
+// Convert APRS A=XXXXXX altitude (feet per spec) to meters, with auto-detection
+// for devices that incorrectly transmit in meters: if the raw value as meters is
+// within 500 m of the node's last known GPS altitude, treat it as meters instead.
+function inferAltitudeMeters(rawFt, nodeId) {
+  const asMeters = rawFt * 0.3048;
+  const valid = v => v >= -500 && v <= 8850; // surface to Everest summit
+  if (!valid(asMeters)) {
+    // Feet interpretation is physically impossible — try reading the raw value as meters
+    return valid(rawFt) ? rawFt : null;
+  }
+  // Cross-check against last known GPS altitude for this node
+  const reg = db.prepare('SELECT last_altitude FROM tracker_registry WHERE node_id=?').get(nodeId);
+  if (reg?.last_altitude != null) {
+    const errFt = Math.abs(asMeters - reg.last_altitude);
+    const errM  = Math.abs(rawFt   - reg.last_altitude);
+    if (errM < errFt && errM < 500) return rawFt; // raw value already in meters
+  }
+  return asMeters; // default: APRS spec (feet → meters)
+}
+
 function processLine(line) {
   if (!line) return;
   if (line.startsWith('#')) {
@@ -83,21 +103,37 @@ function processLine(line) {
   const pos = parsePosition(body);
   if (!pos) return;
 
-  logger.log('aprs', 'info', `position from ${fromCall} (${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)})`);
+  // Altitude: APRS data extension A=XXXXXX (feet per spec)
+  const altMatch = /\bA=(\d{1,6})\b/.exec(body);
+  const altitude = altMatch ? inferAltitudeMeters(parseInt(altMatch[1]), fromCall) : null;
 
-  // Delegate to mqtt-client's handlePosition for registry/geofence/broadcast
+  // Battery voltage: patterns like 3.7V, 12.5V, 4.18V in the comment/status text
+  const voltMatch = /\b(\d{1,2}\.\d{1,2})V\b/i.exec(body);
+  const voltage = voltMatch ? parseFloat(voltMatch[1]) : null;
+
+  logger.log('aprs', 'info',
+    `position from ${fromCall} (${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)})` +
+    (altitude != null ? ` alt=${Math.round(altitude)}m` : '') +
+    (voltage  != null ? ` batt=${voltage}V` : ''));
+
+  const ts = Math.floor(Date.now() / 1000);
   try {
-    require('./mqtt-client').handlePosition({
+    const mqttClient = require('./mqtt-client');
+    mqttClient.handlePosition({
       nodeId: fromCall,
       lat: pos.lat,
       lon: pos.lon,
-      altitude: null,
+      altitude,
       speed: null,
       heading: null,
+      battery: null,
       snr: null,
       rssi: null,
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: ts,
     });
+    if (voltage != null) {
+      mqttClient.handleTelemetry({ nodeId: fromCall, battery: null, voltage, timestamp: ts });
+    }
   } catch (e) {
     logger.log('aprs', 'error', `handlePosition: ${e.message}`);
   }

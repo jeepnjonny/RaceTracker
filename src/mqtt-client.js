@@ -65,15 +65,18 @@ function broadcast(type, data) {
 function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi, battery, timestamp }) {
   if (!nodeId || isNaN(lat) || isNaN(lon)) return;
 
-  // Update registry
+  // Update registry — battery_level uses COALESCE so a position without battery data
+  // doesn't overwrite a previously stored value from a telemetry or position packet.
   db.prepare(`
-    INSERT INTO tracker_registry (node_id, last_seen, last_lat, last_lon, last_altitude, last_speed, snr, rssi)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tracker_registry (node_id, last_seen, last_lat, last_lon, last_altitude, last_speed, battery_level, snr, rssi)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(node_id) DO UPDATE SET
       last_seen=excluded.last_seen, last_lat=excluded.last_lat,
       last_lon=excluded.last_lon, last_altitude=excluded.last_altitude,
-      last_speed=excluded.last_speed, snr=excluded.snr, rssi=excluded.rssi
-  `).run(nodeId, timestamp, lat, lon, altitude ?? null, speed ?? null, snr ?? null, rssi ?? null);
+      last_speed=excluded.last_speed,
+      battery_level=COALESCE(excluded.battery_level, battery_level),
+      snr=excluded.snr, rssi=excluded.rssi
+  `).run(nodeId, timestamp, lat, lon, altitude ?? null, speed ?? null, battery ?? null, snr ?? null, rssi ?? null);
 
   // Store position history
   const activeRace = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
@@ -554,4 +557,4 @@ function invalidateRouteCache(raceId) {
   routeCache.delete(raceId);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition, handleTelemetry };
