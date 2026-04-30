@@ -120,16 +120,23 @@ function handleTelemetry({ nodeId, battery, voltage, timestamp }) {
 }
 
 function handleNodeInfo({ nodeId, longName, shortName, hwModel, timestamp }) {
-  if (!nodeId) return;
+  if (!nodeId || (!longName && !shortName && !hwModel)) return;
+  // COALESCE preserves existing names — a message without a field never blanks one out
   db.prepare(`
     INSERT INTO tracker_registry (node_id, long_name, short_name, hw_model, last_seen)
     VALUES (?,?,?,?,?)
     ON CONFLICT(node_id) DO UPDATE SET
-      long_name=excluded.long_name, short_name=excluded.short_name,
-      hw_model=excluded.hw_model, last_seen=excluded.last_seen
+      long_name=COALESCE(excluded.long_name, long_name),
+      short_name=COALESCE(excluded.short_name, short_name),
+      hw_model=COALESCE(excluded.hw_model, hw_model),
+      last_seen=excluded.last_seen
   `).run(nodeId, longName ?? null, shortName ?? null, hwModel ?? null, timestamp);
 
-  broadcast('tracker_info', { nodeId, longName, shortName, timestamp });
+  const changed = longName || shortName;
+  if (changed) {
+    logger.log('mqtt', 'info', `node info: ${nodeId} → long="${longName}" short="${shortName}"`);
+    broadcast('tracker_info', { nodeId, longName, shortName, timestamp });
+  }
 }
 
 function handleTextMessage({ fromNodeId, toNodeId, text, timestamp }) {
@@ -423,7 +430,18 @@ function checkOffCourse(participant, race, lat, lon, timestamp) {
 // Process a decoded JSON-style message object (from MQTT JSON format)
 function processJsonMessage(msg) {
   const fromHex = typeof msg.from === 'number' ? nodeIdHex(msg.from) : (msg.sender || msg.from || '');
+  if (!fromHex) return;
   const ts = msg.timestamp || Math.floor(Date.now() / 1000);
+
+  // Opportunistically capture node identity from any message that carries it.
+  // Meshtastic includes long_name/short_name in nodeinfo and map_report, and
+  // some router firmware embeds them at the top level of other message types.
+  const longName  = msg.long_name  ?? msg.payload?.long_name  ?? null;
+  const shortName = msg.short_name ?? msg.payload?.short_name ?? null;
+  const hwModel   = msg.hardware   ?? msg.payload?.hardware   ?? null;
+  if (longName || shortName || hwModel) {
+    handleNodeInfo({ nodeId: fromHex, longName, shortName, hwModel, timestamp: ts });
+  }
 
   if (msg.type === 'position' && msg.payload) {
     const p = msg.payload;
@@ -444,7 +462,12 @@ function processJsonMessage(msg) {
     handleTelemetry({ nodeId: fromHex, battery: p.battery_level, voltage: p.voltage, timestamp: ts });
   } else if (msg.type === 'nodeinfo' && msg.payload) {
     const p = msg.payload;
+    // Explicit nodeinfo — already handled by the opportunistic block above,
+    // but call again in case hardware model is only here and names were null.
     handleNodeInfo({ nodeId: fromHex, longName: p.long_name, shortName: p.short_name, hwModel: p.hardware, timestamp: ts });
+  } else if (msg.type === 'map_report' && msg.payload) {
+    const p = msg.payload;
+    handleNodeInfo({ nodeId: fromHex, longName: p.long_name, shortName: p.short_name, hwModel: p.hardware ?? p.hw_model, timestamp: ts });
   } else if (msg.type === 'text') {
     const toHex = typeof msg.to === 'number' ? nodeIdHex(msg.to) : (msg.to || '');
     handleTextMessage({ fromNodeId: fromHex, toNodeId: toHex, text: msg.payload, timestamp: ts });
