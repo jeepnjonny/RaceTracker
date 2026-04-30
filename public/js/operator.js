@@ -784,6 +784,13 @@ function handleParticipantUpdate(data) {
   if (data.action === 'add' || data.action === 'update') {
     participants[data.participant.id] = data.participant;
     updateOrCreateMarker(data.participant);
+    // Immediately clear any missing/stopped alerts if the new status suppresses them
+    const p = participants[data.participant.id];
+    if (shouldSuppressAlerts(p)) {
+      const before = alerts.length;
+      alerts = alerts.filter(a => a.participantId !== p.id);
+      if (alerts.length !== before) { renderAlertsList(); updateAlertCount(); }
+    }
     renderLeaderboard();
   } else if (data.action === 'delete') {
     delete participants[data.id];
