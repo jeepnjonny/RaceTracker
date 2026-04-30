@@ -484,6 +484,51 @@ function selectParticipant(id) {
   if (p?.last_lat && p?.last_lon) leafletMap.panTo([p.last_lat, p.last_lon]);
 }
 
+function computeETAs(pid) {
+  const lp = participants[pid];
+  if (!lp || !lp._pace || lp._pace <= 0 || lp._lastAlong == null) return null;
+  if (lp.status === 'finished' || lp.status === 'dnf' || lp.status === 'dns') return null;
+  const now = Math.floor(Date.now() / 1000);
+  const totalDist = computeTotalDist();
+  if (!totalDist) return null;
+  const isOAB = race?.race_format === 'out_and_back';
+  const fullDist = isOAB ? totalDist * 2 : totalDist;
+  const currentAlong = lp._lastAlong;
+  const remaining = Math.max(0, fullDist - currentAlong);
+  const secsToFinish = remaining / lp._pace;
+
+  const stationMap = getStationAlongMap();
+  let nextStation = null, nextEffAlong = Infinity;
+  for (const s of stations) {
+    if (!s.lat || !s.lon || s.type === 'start') continue;
+    const along = stationMap.get(s.id);
+    if (along == null) continue;
+    const effAlong = (isOAB && lp.has_turnaround) ? (2 * totalDist - along) : along;
+    if (effAlong > currentAlong && effAlong < nextEffAlong) {
+      nextEffAlong = effAlong;
+      nextStation = s;
+    }
+  }
+
+  let etaNext = null, distToNext = null;
+  if (nextStation) {
+    distToNext = nextEffAlong - currentAlong;
+    etaNext = now + distToNext / lp._pace;
+  }
+  return { etaFinish: now + secsToFinish, secsToFinish, etaNext, distToNext, nextStation };
+}
+
+function fmtEtaDelta(secs) {
+  if (secs < 0) return 'overdue';
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function fmtEtaDist(meters) {
+  if (race?.speed_units === 'min_mile') return (meters / 1609.34).toFixed(1) + ' mi';
+  return (meters / 1000).toFixed(1) + ' km';
+}
+
 async function showParticipantInfo(id) {
   selectedPId = id;
   const res = await RT.get(`/api/races/${race.id}/participants/${id}`);
@@ -518,6 +563,25 @@ async function showParticipantInfo(id) {
       <div class="info-field"><span class="lbl">EMERGENCY</span><span class="val">${p.emergency_contact||'—'}</span></div>
       ${p.age ? `<div class="info-field"><span class="lbl">AGE</span><span class="val">${p.age}</span></div>` : ''}
     </div>
+    ${(() => {
+      const eta = computeETAs(id);
+      if (!eta) return '';
+      const now = Math.floor(Date.now() / 1000);
+      const nextHtml = eta.nextStation
+        ? `<div class="info-field" style="margin-bottom:4px">
+            <span class="lbl">NEXT: ${eta.nextStation.name.toUpperCase()}</span>
+            <span class="val text-accent">${RT.fmtTime(eta.etaNext, fmt24)} <span style="color:var(--text3);font-size:11px">(in ${fmtEtaDelta(eta.etaNext - now)}, ${fmtEtaDist(eta.distToNext)})</span></span>
+           </div>`
+        : '';
+      return `<div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:8px">
+        <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">ETA</div>
+        ${nextHtml}
+        <div class="info-field">
+          <span class="lbl">FINISH</span>
+          <span class="val text-accent">${RT.fmtTime(eta.etaFinish, fmt24)} <span style="color:var(--text3);font-size:11px">(in ${fmtEtaDelta(eta.secsToFinish)})</span></span>
+        </div>
+      </div>`;
+    })()}
     <div style="border-top:1px solid var(--border);padding-top:8px">
       <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">EVENT LOG</div>
       ${(p.events||[]).length === 0 ? '<div class="text-dim" style="font-size:12px">No events yet.</div>' :
