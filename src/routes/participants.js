@@ -33,6 +33,7 @@ function csvParse(text) {
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
 const aprsClient = require('../aprs-client');
+const mqttClient = require('../mqtt-client');
 const logger = require('../logger');
 const router = express.Router({ mergeParams: true });
 
@@ -120,8 +121,12 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
   const updated = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(p.id));
   wsManager.broadcast({ type: 'participant_update', data: { action: 'update', participant: updated } });
   aprsClient.notifyRosterChange();
-  if (updates.status && updates.status !== p.status)
+  if (updates.status && updates.status !== p.status) {
     logger.log('race', 'info', `Status change — #${updated.bib} ${updated.name}: ${p.status} → ${updates.status}`);
+    if (updates.status === 'finished' || updates.status === 'dnf') {
+      setImmediate(() => mqttClient.auditMissedStations(p.id, parseInt(req.params.raceId)));
+    }
+  }
   res.json({ ok: true, data: updated });
 });
 

@@ -691,8 +691,8 @@ async function saveParticipant() {
   // Parse optional time fields
   const startStr = document.getElementById('em-start').value.trim();
   const finishStr = document.getElementById('em-finish').value.trim();
-  if (startStr) body.start_time = parseTimeToUnix(startStr);
-  if (finishStr) body.finish_time = parseTimeToUnix(finishStr);
+  if (startStr) body.start_time = parseTimeToUnix(startStr, race?.date);
+  if (finishStr) body.finish_time = parseTimeToUnix(finishStr, race?.date);
 
   const res = await RT.put(`/api/races/${race.id}/participants/${id}`, body);
   if (!res.ok) { RT.toast(res.error, 'warn'); return; }
@@ -703,7 +703,7 @@ async function saveParticipant() {
     const stationId = document.getElementById('em-event-station').value || null;
     const notes = document.getElementById('em-notes').value.trim() || null;
     const evTimeStr = document.getElementById('em-event-time').value.trim();
-    const ts = evTimeStr ? parseTimeToUnix(evTimeStr) : Math.floor(Date.now() / 1000);
+    const ts = evTimeStr ? parseTimeToUnix(evTimeStr, race?.date) : Math.floor(Date.now() / 1000);
     await RT.post(`/api/races/${race.id}/events`, { participant_id: id, event_type: eventType, station_id: stationId, timestamp: ts, notes });
   }
 
@@ -715,12 +715,12 @@ async function saveParticipant() {
   RT.toast('Saved', 'ok');
 }
 
-function parseTimeToUnix(str) {
-  // Parse HH:MM:SS or HH:MM relative to today
-  const today = new Date();
+function parseTimeToUnix(str, dateStr) {
+  // Parse HH:MM:SS or HH:MM anchored to dateStr (YYYY-MM-DD) or today if omitted
+  const base = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
   const parts = str.split(':').map(Number);
-  today.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
-  return Math.floor(today.getTime() / 1000);
+  base.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+  return Math.floor(base.getTime() / 1000);
 }
 
 // ── WS event handlers ─────────────────────────────────────────────────────────

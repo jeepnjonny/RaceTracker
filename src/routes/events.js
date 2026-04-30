@@ -4,6 +4,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
 const logger = require('../logger');
+const mqttClient = require('../mqtt-client');
 const router = express.Router({ mergeParams: true });
 
 router.get('/', requireAuth, (req, res) => {
@@ -43,9 +44,11 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
     } else if (event_type === 'finish') {
       db.prepare("UPDATE participants SET status='finished', finish_time=? WHERE id=? AND race_id=?")
         .run(ts, participant_id, req.params.raceId);
+      setImmediate(() => mqttClient.auditMissedStations(parseInt(participant_id), parseInt(req.params.raceId)));
     } else if (event_type === 'dnf') {
       db.prepare("UPDATE participants SET status='dnf' WHERE id=? AND race_id=?")
         .run(participant_id, req.params.raceId);
+      setImmediate(() => mqttClient.auditMissedStations(parseInt(participant_id), parseInt(req.params.raceId)));
     } else if (event_type === 'dns') {
       db.prepare("UPDATE participants SET status='dns' WHERE id=? AND race_id=?")
         .run(participant_id, req.params.raceId);

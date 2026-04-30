@@ -100,7 +100,7 @@ function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi,
     if (participant) {
       checkGeofences(participant, activeRace, lat, lon, timestamp);
       checkOffCourse(participant, activeRace, lat, lon, timestamp);
-      checkMissedStations(participant, activeRace, lat, lon, timestamp, speed);
+      checkBetweenBeaconStations(participant, activeRace, lat, lon, timestamp);
     }
   }
 
@@ -225,6 +225,11 @@ function emitGeofenceEvent(raceId, participant, eventType, station, timestamp) {
 
   logger.log('race', 'info', `${eventType.toUpperCase()} — ${participant.name} (#${participant.bib}) at ${station.name}`);
   broadcast('event', { ...event, has_turnaround });
+
+  // Trigger audit sweep when participant finishes so any missed stations get backfilled
+  if (eventType === 'finish') {
+    setImmediate(() => auditMissedStations(participant.id, raceId));
+  }
 }
 
 function checkGeofences(participant, race, lat, lon, timestamp) {
@@ -344,82 +349,242 @@ function getRouteData(race) {
   } catch { return null; }
 }
 
-// Tracks stations we've already backfilled for a given participant this session
-const backfilledStationEvents = new Set(); // `${participantId}_${stationId}`
+// Tracks stations already backfilled this session; key = `${participantId}_${stationId}_${pass}`
+// pass 1 = outbound, pass 2 = return (OAB only)
+const backfilledStationEvents = new Set();
+// Last known effective-along per participant: { eff, ts }
+const participantPrevEff = new Map();
 
-function checkMissedStations(participant, race, lat, lon, timestamp, speed) {
+// Interpolate a timestamp linearly between two anchor points
+function interpolateTs(ts0, eff0, ts1, eff1, targetEff) {
+  if (eff1 <= eff0) return ts1;
+  return Math.round(ts0 + (targetEff - eff0) / (eff1 - eff0) * (ts1 - ts0));
+}
+
+// Find surrounding anchors in a sorted [{eff,ts}] array and interpolate
+function interpolateFromAnchors(anchors, targetEff) {
+  let before = null, after = null;
+  for (const a of anchors) {
+    if (a.eff <= targetEff && (!before || a.eff > before.eff)) before = a;
+    if (a.eff >= targetEff && (!after  || a.eff < after.eff))  after  = a;
+  }
+  if (!before && !after) return null;
+  if (!before) return after.ts;
+  if (!after)  return before.ts;
+  if (before.eff === after.eff) return before.ts;
+  return interpolateTs(before.ts, before.eff, after.ts, after.eff, targetEff);
+}
+
+// Insert a backfilled event, read it back, and broadcast
+function emitBackfill(raceId, participant, eventType, station, timestamp, note, hasTurnaround) {
+  const { lastInsertRowid } = db.prepare(
+    `INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp, notes)
+     VALUES (?,?,?,?,?,?)`
+  ).run(raceId, participant.id, eventType, station.id, timestamp, note);
+  const event = db.prepare(`
+    SELECT e.*, p.bib, p.name as participant_name, s.name as station_name
+    FROM events e
+    LEFT JOIN participants p ON e.participant_id = p.id
+    LEFT JOIN stations s ON e.station_id = s.id
+    WHERE e.id=?`).get(lastInsertRowid);
+  broadcast('event', { ...event, has_turnaround: hasTurnaround });
+  return event;
+}
+
+// ── Approach A: between-beacon interval sweep ──────────────────────────────────
+// Called on every position update. Checks all stations whose effective along falls
+// between the participant's previous beacon position and the current one. This
+// naturally handles any speed or beacon rate — even a single beacon covering the
+// entire course will catch all stations in the gap.
+function checkBetweenBeaconStations(participant, race, lat, lon, timestamp) {
   if (!(race.feat_auto_log ?? 1)) return;
-  // Only run when the participant is clearly moving; avoids backfilling for a device
-  // that just powered on after a long gap with no reliable position history.
-  if (!speed || speed < 0.3) return;
 
   const route = getRouteData(race);
   if (!route) return;
 
-  const { distanceAlongRoute: currentAlong } = geo.findPositionOnRoute(lat, lon, route.points, route.meta);
-
-  // Only consider aid/checkpoint/turnaround stations with known coordinates
-  const stations = db.prepare(
-    `SELECT * FROM stations WHERE race_id=? AND type IN ('aid','checkpoint','turnaround')
-     AND lat IS NOT NULL AND lon IS NOT NULL`
-  ).all(race.id);
+  const totalDist = route.meta.total;
+  const { distanceAlongRoute: currAlong } = geo.findPositionOnRoute(lat, lon, route.points, route.meta);
 
   const isOAB = race.race_format === 'out_and_back';
-  // Return-leg detection: if OAB, check for a turnaround event
   const hasTurnaround = isOAB && !!(db.prepare(`
     SELECT 1 FROM events WHERE participant_id=? AND race_id=?
     AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround')
     LIMIT 1
   `).get(participant.id, race.id, race.id));
 
-  // On the OAB return leg the station ordering reverses; skip for now to avoid
-  // incorrect direction assumptions.
-  if (isOAB && hasTurnaround) return;
+  // Effective along always increases: 0→totalDist (outbound), totalDist→2*totalDist (return)
+  const currEff = (isOAB && hasTurnaround) ? (2 * totalDist - currAlong) : currAlong;
+
+  const prev = participantPrevEff.get(participant.id) || { eff: 0, ts: participant.start_time || timestamp };
+  participantPrevEff.set(participant.id, { eff: currEff, ts: timestamp });
+
+  if (currEff <= prev.eff) return; // moved backward or no progress
+
+  const stations = db.prepare(
+    `SELECT * FROM stations WHERE race_id=? AND type IN ('aid','checkpoint','turnaround')
+     AND lat IS NOT NULL AND lon IS NOT NULL`
+  ).all(race.id);
 
   for (const station of stations) {
-    const key = `${participant.id}_${station.id}`;
-    if (backfilledStationEvents.has(key)) continue;
-
     const stationAlong = geo.findPositionOnRoute(
       station.lat, station.lon, route.points, route.meta
     ).distanceAlongRoute;
 
-    // Participant must be this far past the station's geofence radius before we act
-    const clearance = (race.checkpoint_radius || 50) + 50;
-    if (currentAlong <= stationAlong + clearance) continue;
+    // For OAB non-turnaround stations: two passes (outbound eff=S, return eff=2T-S)
+    const passes = (isOAB && station.type !== 'turnaround')
+      ? [{ eff: stationAlong, pass: 1 }, { eff: 2 * totalDist - stationAlong, pass: 2 }]
+      : [{ eff: stationAlong, pass: 1 }];
 
-    // Skip if any event already exists for this participant at this station
-    const existing = db.prepare(
-      'SELECT 1 FROM events WHERE participant_id=? AND station_id=? LIMIT 1'
-    ).get(participant.id, station.id);
+    for (const { eff: stationEff, pass } of passes) {
+      if (stationEff <= prev.eff || stationEff > currEff) continue; // not in this beacon gap
 
-    backfilledStationEvents.add(key);
-    if (existing) continue;
+      const key = `${participant.id}_${station.id}_${pass}`;
+      if (backfilledStationEvents.has(key)) continue;
+      backfilledStationEvents.add(key);
 
-    // Back-calculate when they were likely at the station using current speed
-    const distPast = currentAlong - stationAlong;
-    const secsAgo = Math.round(distPast / speed);
-    const departTime = Math.max(
-      participant.start_time || (timestamp - 7200),
-      timestamp - secsAgo
-    );
+      const existingCount = db.prepare(
+        `SELECT COUNT(*) as cnt FROM events
+         WHERE participant_id=? AND station_id=? AND event_type='aid_depart'`
+      ).get(participant.id, station.id).cnt;
 
-    const { lastInsertRowid } = db.prepare(
-      `INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp, notes)
-       VALUES (?,?,?,?,?,?)`
-    ).run(race.id, participant.id, 'aid_depart', station.id, departTime, 'auto-backfilled');
+      if (pass === 1 && existingCount >= 1) continue; // outbound already logged
+      if (pass === 2 && existingCount !== 1) continue; // need exactly 1 outbound to log return
 
-    const event = db.prepare(`
-      SELECT e.*, p.bib, p.name as participant_name, s.name as station_name
-      FROM events e
-      LEFT JOIN participants p ON e.participant_id = p.id
-      LEFT JOIN stations s ON e.station_id = s.id
-      WHERE e.id=?
-    `).get(lastInsertRowid);
+      const stationTs = interpolateTs(prev.ts, prev.eff, timestamp, currEff, stationEff);
+      const note = pass === 2 ? 'auto-backfilled (return)' : 'auto-backfilled';
 
-    logger.log('race', 'info',
-      `AUTO-BACKFILL depart — ${participant.name} (#${participant.bib}) at ${station.name} (est. ${secsAgo}s ago)`);
-    broadcast('event', { ...event, has_turnaround: hasTurnaround });
+      const event = emitBackfill(race.id, participant, 'aid_depart', station, stationTs, note, hasTurnaround || pass === 2);
+      logger.log('race', 'info',
+        `BACKFILL depart — ${participant.name} (#${participant.bib}) at ${station.name} pass ${pass}`);
+    }
+  }
+}
+
+// ── Approach B: finish-time audit sweep ───────────────────────────────────────
+// Called when a participant finishes or is marked DNF. Uses event timestamps as
+// interpolation anchors so missed stations get accurate estimated times even when
+// beacon data was sparse. Handles OAB double-passes correctly.
+function auditMissedStations(participantId, raceId) {
+  if (!participantId) return;
+
+  const participant = db.prepare('SELECT * FROM participants WHERE id=?').get(participantId);
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(raceId);
+  if (!participant || !race || !participant.start_time) return;
+
+  const route = getRouteData(race);
+  if (!route) return;
+
+  const totalDist = route.meta.total;
+  const isOAB = race.race_format === 'out_and_back';
+  const startTs = participant.start_time;
+
+  // Determine upper anchor (finish or last known position)
+  let upperEff, upperTs;
+  if (participant.finish_time) {
+    upperEff = isOAB ? 2 * totalDist : totalDist;
+    upperTs  = participant.finish_time;
+  } else if (participant.tracker_id) {
+    const reg = db.prepare('SELECT last_lat, last_lon, last_seen FROM tracker_registry WHERE node_id=?')
+      .get(participant.tracker_id);
+    if (!reg?.last_lat || !reg?.last_seen) return;
+    const { distanceAlongRoute } = geo.findPositionOnRoute(reg.last_lat, reg.last_lon, route.points, route.meta);
+    upperEff = distanceAlongRoute;
+    upperTs  = reg.last_seen;
+  } else {
+    return;
+  }
+
+  // Find turnaround event for OAB
+  let turnaroundTs = null;
+  if (isOAB) {
+    const tev = db.prepare(`
+      SELECT e.timestamp FROM events e
+      JOIN stations s ON e.station_id = s.id
+      WHERE e.participant_id=? AND e.race_id=? AND s.type='turnaround'
+      ORDER BY e.timestamp LIMIT 1
+    `).get(participantId, raceId);
+    turnaroundTs = tev?.timestamp ?? Math.round(startTs + (upperTs - startTs) / 2);
+  }
+
+  // Build sorted anchor arrays for outbound and (OAB) return legs
+  const outboundAnchors = [{ eff: 0, ts: startTs }, ...(isOAB ? [{ eff: totalDist, ts: turnaroundTs }] : [{ eff: upperEff, ts: upperTs }])];
+  const returnAnchors  = isOAB ? [{ eff: totalDist, ts: turnaroundTs }, { eff: upperEff, ts: upperTs }] : null;
+
+  // Add existing depart events as interior anchors
+  const existing = db.prepare(`
+    SELECT e.timestamp, e.station_id, s.lat, s.lon
+    FROM events e
+    JOIN stations s ON e.station_id = s.id
+    WHERE e.participant_id=? AND e.race_id=?
+    AND e.event_type='aid_depart' AND s.lat IS NOT NULL
+    ORDER BY e.timestamp
+  `).all(participantId, raceId);
+
+  for (const ev of existing) {
+    const { distanceAlongRoute } = geo.findPositionOnRoute(ev.lat, ev.lon, route.points, route.meta);
+    if (isOAB && ev.timestamp > turnaroundTs) {
+      returnAnchors.push({ eff: 2 * totalDist - distanceAlongRoute, ts: ev.timestamp });
+    } else {
+      outboundAnchors.push({ eff: distanceAlongRoute, ts: ev.timestamp });
+    }
+  }
+
+  outboundAnchors.sort((a, b) => a.eff - b.eff);
+  if (returnAnchors) returnAnchors.sort((a, b) => a.eff - b.eff);
+
+  const stations = db.prepare(
+    `SELECT * FROM stations WHERE race_id=? AND type IN ('aid','checkpoint','turnaround')
+     AND lat IS NOT NULL AND lon IS NOT NULL`
+  ).all(raceId);
+
+  for (const station of stations) {
+    const stationAlong = geo.findPositionOnRoute(
+      station.lat, station.lon, route.points, route.meta
+    ).distanceAlongRoute;
+
+    const checks = [{ eff: stationAlong, pass: 1, anchors: outboundAnchors }];
+    if (isOAB && station.type !== 'turnaround' && returnAnchors) {
+      const retEff = 2 * totalDist - stationAlong;
+      if (retEff <= upperEff) checks.push({ eff: retEff, pass: 2, anchors: returnAnchors });
+    }
+
+    for (const { eff: stationEff, pass, anchors } of checks) {
+      if (stationEff > upperEff) continue; // participant never reached this station
+
+      const key = `${participantId}_${station.id}_${pass}`;
+      if (backfilledStationEvents.has(key)) continue;
+      backfilledStationEvents.add(key);
+
+      const cnt = db.prepare(
+        `SELECT COUNT(*) as cnt FROM events
+         WHERE participant_id=? AND station_id=? AND event_type='aid_depart'`
+      ).get(participantId, station.id).cnt;
+
+      if (pass === 1 && cnt >= 1) continue;
+      if (pass === 2 && cnt !== 1) continue;
+
+      const stationTs = interpolateFromAnchors(anchors, stationEff)
+        ?? interpolateTs(startTs, 0, upperTs, upperEff, stationEff);
+      const note = pass === 2 ? 'audit-backfill (return)' : 'audit-backfill';
+
+      emitBackfill(raceId, participant, 'aid_depart', station, stationTs, note, isOAB);
+      logger.log('race', 'info',
+        `AUDIT BACKFILL depart — ${participant.name} (#${participant.bib}) at ${station.name} pass ${pass}`);
+    }
+  }
+
+  // Synthesize start event if start_time is set but no start event exists
+  const hasStart = db.prepare(
+    `SELECT 1 FROM events WHERE participant_id=? AND race_id=? AND event_type='start' LIMIT 1`
+  ).get(participantId, raceId);
+  if (!hasStart) {
+    const startStn = db.prepare(
+      `SELECT * FROM stations WHERE race_id=? AND type IN ('start','start_finish') AND lat IS NOT NULL LIMIT 1`
+    ).get(raceId);
+    if (startStn) {
+      emitBackfill(raceId, participant, 'start', startStn, startTs, 'audit-backfill', false);
+      logger.log('race', 'info', `AUDIT BACKFILL start — ${participant.name} (#${participant.bib})`);
+    }
   }
 }
 
@@ -689,10 +854,8 @@ function publishMessage(toNodeId, text) {
 
 function invalidateRouteCache(raceId) {
   routeCache.delete(raceId);
-  // Clear backfill cache so stations are re-evaluated against the new route
-  for (const key of backfilledStationEvents) {
-    backfilledStationEvents.delete(key);
-  }
+  backfilledStationEvents.clear();
+  participantPrevEff.clear();
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition, handleTelemetry };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition, handleTelemetry, auditMissedStations };
