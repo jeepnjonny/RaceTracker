@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const mqttClient = require('../mqtt-client');
+const wsManager = require('../websocket');
 const logger = require('../logger');
 const router = express.Router();
 
@@ -12,6 +13,7 @@ const RACE_FIELDS = [
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
   'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id','race_format',
   'feat_missing','feat_auto_log','feat_auto_start','feat_off_course','feat_stopped','speed_units',
+  'start_time','start_clearance',
 ];
 
 router.get('/', requireAuth, (req, res) => {
@@ -104,22 +106,24 @@ router.post('/:id/clone', requireRole('admin'), (req, res) => {
     INSERT INTO races (name, date, status, time_format, clock_seconds, geofence_radius, off_course_distance,
       stopped_time, missing_timer, alerts_enabled, messaging_enabled, viewer_map_enabled,
       leaderboard_enabled, weather_enabled, course_id, race_format,
-      feat_missing, feat_auto_log, feat_auto_start, feat_off_course, feat_stopped, cloned_from)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      feat_missing, feat_auto_log, feat_auto_start, feat_off_course, feat_stopped,
+      start_clearance, cloned_from)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(name, date, 'upcoming',
     src.time_format, src.clock_seconds ?? 1, src.geofence_radius, src.off_course_distance,
     src.stopped_time, src.missing_timer, src.alerts_enabled, src.messaging_enabled,
     src.viewer_map_enabled, src.leaderboard_enabled, src.weather_enabled,
     src.course_id || null, src.race_format || 'point_to_point',
     src.feat_missing ?? 1, src.feat_auto_log ?? 1, src.feat_auto_start ?? 1,
-    src.feat_off_course ?? 1, src.feat_stopped ?? 1, src.id);
+    src.feat_off_course ?? 1, src.feat_stopped ?? 1,
+    src.start_clearance ?? 400, src.id);
 
   const newId = newRace.lastInsertRowid;
 
   // Clone heats (mapping old→new ids)
   const heatMap = {};
   for (const h of db.prepare('SELECT * FROM heats WHERE race_id=?').all(src.id)) {
-    const r = db.prepare('INSERT INTO heats (race_id, name, color, shape) VALUES (?,?,?,?)').run(newId, h.name, h.color, h.shape);
+    const r = db.prepare('INSERT INTO heats (race_id, name, color, shape, start_time) VALUES (?,?,?,?,?)').run(newId, h.name, h.color, h.shape, h.start_time ?? null);
     heatMap[h.id] = r.lastInsertRowid;
   }
   // Clone classes
@@ -154,6 +158,24 @@ router.post('/:id/viewer-token', requireRole('admin'), (req, res) => {
 router.delete('/:id/viewer-token', requireRole('admin'), (req, res) => {
   db.prepare('UPDATE races SET viewer_token=NULL WHERE id=?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// Open or close the operator start window
+router.post('/:id/start-window', requireRole('admin', 'operator'), (req, res) => {
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
+  if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
+  const open = req.body.action !== 'close';
+  const now = Math.floor(Date.now() / 1000);
+  if (open) {
+    db.prepare('UPDATE races SET start_window_open=1, start_window_ts=? WHERE id=?').run(now, req.params.id);
+    logger.log('race', 'info', `Start window OPENED by ${req.session.user.username}`);
+  } else {
+    db.prepare('UPDATE races SET start_window_open=0 WHERE id=?').run(req.params.id);
+    logger.log('race', 'info', `Start window CLOSED by ${req.session.user.username}`);
+  }
+  const updated = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
+  wsManager.broadcast({ type: 'race_update', data: updated });
+  res.json({ ok: true, data: updated });
 });
 
 module.exports = router;

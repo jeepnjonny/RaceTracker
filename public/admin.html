@@ -144,6 +144,11 @@
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-auto-start" checked>
         <label for="rm-feat-auto-start" style="flex:1;font-size:13px;cursor:pointer">Auto-start / finish participants</label>
+        <span style="font-size:11px;color:var(--text3)">start time</span>
+        <input id="rm-start-time" type="text" placeholder="HH:MM or HH:MM:SS" style="width:110px;text-align:right">
+        <span style="font-size:11px;color:var(--text3)">clearance</span>
+        <input id="rm-start-clearance" type="number" min="50" value="400" style="width:60px;text-align:right">
+        <span style="font-size:12px;color:var(--text3);min-width:14px">m</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
         <input type="checkbox" id="rm-feat-off-course" checked>
@@ -236,6 +241,7 @@
   <div class="modal">
     <h2 id="heat-modal-title">NEW HEAT</h2>
     <div class="form-group"><label>HEAT NAME</label><input id="hm-name" placeholder="e.g. Wave 1, Elite"></div>
+    <div class="form-group"><label>START TIME <span class="text-dim">(HH:MM or HH:MM:SS — leave blank to use race default)</span></label><input id="hm-start-time" type="text" placeholder="optional, e.g. 08:30:00"></div>
     <div class="form-row">
       <div class="form-group">
         <label>COLOR</label>

@@ -62,6 +62,13 @@ function handleWS(msg) {
   else if (type === 'mqtt_status') updateMqttPill(data);
   else if (type === 'aprs_status') updateAprsPill(data);
   else if (type === 'tracker_info') handleTrackerInfo(data);
+  else if (type === 'race_update') handleRaceUpdate(data);
+}
+
+function handleRaceUpdate(data) {
+  if (!race || data.id !== race.id) return;
+  race = data;
+  updateStartWindowBtn();
 }
 
 function applyMessagingFlag() {
@@ -89,6 +96,7 @@ function handleInit(data) {
   if (data.aprs) updateAprsPill(data.aprs);
   applyMessagingFlag();
   applyWeatherFlag();
+  updateStartWindowBtn();
 
   heats = {}; (data.heats || []).forEach(h => heats[h.id] = h);
   classes = {}; (data.classes || []).forEach(c => classes[c.id] = c);
@@ -851,6 +859,56 @@ function updateAprsPill(status) {
   else pill.className = 'pill pill-idle';
 }
 
+// ── Start Window ──────────────────────────────────────────────────────────────
+let startWindowInterval = null;
+
+function updateStartWindowBtn() {
+  const btn = document.getElementById('start-window-btn');
+  if (!btn) return;
+
+  // Only show for operators/admins when feat_auto_start is on and no fixed start time
+  const showBtn = race && race.feat_auto_start && !race.start_time;
+  if (!showBtn) { btn.classList.add('hidden'); return; }
+  btn.classList.remove('hidden');
+
+  clearInterval(startWindowInterval);
+  startWindowInterval = null;
+
+  if (race.start_window_open && race.start_window_ts) {
+    // Window is open — show countdown to 45-min auto-close
+    const updateCountdown = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const elapsed = now - race.start_window_ts;
+      const remaining = 45 * 60 - elapsed;
+      if (remaining <= 0) {
+        btn.textContent = 'CLOSE START WINDOW';
+        btn.style.background = 'var(--accent-red, #f85149)';
+        btn.style.color = '#fff';
+      } else {
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        btn.textContent = `WINDOW OPEN — ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} ▶ CLOSE`;
+        btn.style.background = 'var(--accent-green, #3fb950)';
+        btn.style.color = '#000';
+      }
+    };
+    updateCountdown();
+    startWindowInterval = setInterval(updateCountdown, 1000);
+  } else {
+    btn.textContent = 'OPEN START WINDOW';
+    btn.style.background = '';
+    btn.style.color = '';
+  }
+}
+
+async function toggleStartWindow() {
+  if (!race) return;
+  const action = race.start_window_open ? 'close' : 'open';
+  const res = await RT.post(`/api/races/${race.id}/start-window`, { action });
+  if (!res.ok) RT.toast(res.error || 'Failed', 'warn');
+  // Server broadcasts race_update which calls handleRaceUpdate → updateStartWindowBtn
+}
+
 function updateRacePill(r) {
   const pill = document.getElementById('race-pill');
   const overlay = document.getElementById('no-race-overlay');
@@ -1277,5 +1335,6 @@ document.addEventListener('keydown', e => {
 init();
 
 return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipant,
-         openEditModal, sendMessage, dismissAlert, showViewerLink, copyViewerLink };
+         openEditModal, sendMessage, dismissAlert, showViewerLink, copyViewerLink,
+         toggleStartWindow };
 })();

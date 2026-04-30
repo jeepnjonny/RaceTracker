@@ -310,6 +310,7 @@ function checkGeofences(participant, race, lat, lon, timestamp) {
         (station.type === 'start_finish' && participant.status === 'dns');
 
       if (isStartStation && participant.status === 'dns' && autoStart) {
+        if (!resolveStartWindow(participant, race, timestamp)) continue;
         db.prepare("UPDATE participants SET status='active', start_time=? WHERE id=?").run(timestamp, participant.id);
         emitGeofenceEvent(race.id, participant, 'start', station, timestamp);
       } else if (!['start', 'finish', 'start_finish'].includes(station.type)) {
@@ -391,6 +392,22 @@ function emitBackfill(raceId, participant, eventType, station, timestamp, note, 
   return event;
 }
 
+// Determine whether auto-start is permitted for this participant right now.
+// Priority: heat.start_time > race.start_time > operator start window (45-min auto-close).
+// Returns false if nothing is configured — this blocks auto-start until an operator acts.
+function resolveStartWindow(participant, race, timestamp) {
+  if (participant.heat_id) {
+    const heat = db.prepare('SELECT start_time FROM heats WHERE id=?').get(participant.heat_id);
+    if (heat?.start_time) return timestamp >= heat.start_time;
+  }
+  if (race.start_time) return timestamp >= race.start_time;
+  if (race.start_window_open && race.start_window_ts) {
+    const age = timestamp - race.start_window_ts;
+    return age >= 0 && age <= 45 * 60;
+  }
+  return false;
+}
+
 // ── Approach A: between-beacon interval sweep ──────────────────────────────────
 // Called on every position update. Checks all stations whose effective along falls
 // between the participant's previous beacon position and the current one. This
@@ -421,10 +438,9 @@ function checkBetweenBeaconStations(participant, race, lat, lon, timestamp) {
   if (currEff <= prev.eff) return; // moved backward or no progress
 
   // Clearance: don't fire while participant is still inside (or just exiting) a geofence.
-  // Restores the key safety check from the old code. For fast vehicles this is negligible
-  // (5 km gaps vs 50 m buffer); for normal pace it prevents a duplicate depart when the
-  // geofence already caught the arrive but hasn't yet caught the depart.
-  const clearance = race.checkpoint_radius || 50;
+  // For start stations a larger threshold (start_clearance) prevents staging-area false positives.
+  const clearance      = race.checkpoint_radius || 50;
+  const startClearance = race.start_clearance   || 400;
 
   const stations = db.prepare(
     `SELECT * FROM stations WHERE race_id=? AND type IN ('start','start_finish','aid','checkpoint','turnaround')
@@ -444,8 +460,15 @@ function checkBetweenBeaconStations(participant, race, lat, lon, timestamp) {
       : [{ eff: stationAlong, pass: 1 }];
 
     for (const { eff: stationEff, pass } of passes) {
-      // Must be in this beacon gap AND far enough past to clear the geofence
-      if (stationEff <= prev.eff || stationEff + clearance > currEff) continue;
+      if (isStart) {
+        // Start is at eff≈0 — skip the prev.eff guard (0 <= 0 always fails it).
+        // Require clearance past the start line AND the start window to be open.
+        if (stationEff + startClearance > currEff) continue;
+        if (!resolveStartWindow(participant, race, timestamp)) continue;
+      } else {
+        // Must be in this beacon gap AND far enough past to clear the geofence
+        if (stationEff <= prev.eff || stationEff + clearance > currEff) continue;
+      }
 
       const key = `${participant.id}_${station.id}_${pass}`;
       if (backfilledStationEvents.has(key)) continue;

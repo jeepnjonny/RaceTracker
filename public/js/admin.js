@@ -1,4 +1,20 @@
 'use strict';
+
+function parseTimeToUnix(str, dateStr) {
+  if (!str || !str.trim()) return null;
+  const base = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+  const parts = str.trim().split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  const [h = 0, m = 0, s = 0] = parts;
+  return Math.floor(base.getTime() / 1000) + h * 3600 + m * 60 + s;
+}
+
+function unixToTimeStr(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
 let currentUser = null;
 let races = [], activeRaceId = null;
 let editingRaceId = null, editingUserId = null, editingHeatId = null;
@@ -231,6 +247,8 @@ async function openRaceModal(id) {
   document.getElementById('rm-leaderboard').checked  = !!(race?.leaderboard_enabled ?? 1);
   document.getElementById('rm-weather').checked      = !!(race?.weather_enabled);
   document.getElementById('rm-race-format').value    = race?.race_format || 'point_to_point';
+  document.getElementById('rm-start-time').value     = unixToTimeStr(race?.start_time);
+  document.getElementById('rm-start-clearance').value = race?.start_clearance ?? 400;
   // Populate course dropdown
   const cr = await RT.get('/api/courses');
   const cSel = document.getElementById('rm-course-id');
@@ -263,6 +281,8 @@ async function saveRace() {
     weather_enabled:     document.getElementById('rm-weather').checked ? 1 : 0,
     course_id:           courseVal ? parseInt(courseVal) : null,
     race_format:         document.getElementById('rm-race-format').value,
+    start_time:          parseTimeToUnix(document.getElementById('rm-start-time').value, document.getElementById('rm-date').value) ?? null,
+    start_clearance:     parseInt(document.getElementById('rm-start-clearance').value) || 400,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId
@@ -321,11 +341,13 @@ function renderHeatsList() {
   const el = document.getElementById('heats-list');
   if (!el) return;
   if (!heats.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No heats defined.</div>'; return; }
-  el.innerHTML = `<table class="data-table"><thead><tr><th>NAME</th><th>COLOR</th><th>SHAPE</th><th>ICON</th><th></th></tr></thead><tbody>
+  const race = races.find(r => r.id === selectedRaceId);
+  el.innerHTML = `<table class="data-table"><thead><tr><th>NAME</th><th>COLOR</th><th>SHAPE</th><th>START TIME</th><th>ICON</th><th></th></tr></thead><tbody>
     ${heats.map(h => `<tr>
       <td>${h.name}</td>
       <td><span style="color:${h.color}">${h.color}</span></td>
       <td>${h.shape}</td>
+      <td style="font-size:12px;color:var(--text3)">${h.start_time ? RT.fmtTime(h.start_time, race?.time_format === '24h') : '<span style="color:var(--text4)">—</span>'}</td>
       <td>${RT.SHAPES[h.shape]?.(h.color, 18) || ''}</td>
       <td style="text-align:right">
         <button style="font-size:11px;padding:2px 8px" onclick="openHeatModal(${h.id})">EDIT</button>
@@ -349,10 +371,14 @@ function renderClassesList() {
 function openHeatModal(id) {
   editingHeatId = id || null;
   const heat = id ? heats.find(h => h.id === id) : null;
+  // Need race date for start_time parsing
+  const race = races.find(r => r.id === selectedRaceId);
   document.getElementById('heat-modal-title').textContent = id ? 'EDIT HEAT' : 'NEW HEAT';
-  document.getElementById('hm-name').value   = heat?.name || '';
-  document.getElementById('hm-color').value  = heat?.color || '#58a6ff';
-  document.getElementById('hm-shape').value  = heat?.shape || 'circle';
+  document.getElementById('hm-name').value       = heat?.name || '';
+  document.getElementById('hm-color').value      = heat?.color || '#58a6ff';
+  document.getElementById('hm-shape').value      = heat?.shape || 'circle';
+  document.getElementById('hm-start-time').value = unixToTimeStr(heat?.start_time);
+  document.getElementById('hm-start-time').dataset.raceDate = race?.date || '';
   updateHeatPreview();
   document.getElementById('heat-modal').classList.remove('hidden');
 }
@@ -365,13 +391,15 @@ function updateHeatPreview() {
 }
 
 async function saveHeat() {
-  const name = document.getElementById('hm-name').value.trim();
+  const name  = document.getElementById('hm-name').value.trim();
   const color = document.getElementById('hm-color').value;
   const shape = document.getElementById('hm-shape').value;
+  const startTimeEl = document.getElementById('hm-start-time');
+  const start_time = parseTimeToUnix(startTimeEl.value, startTimeEl.dataset.raceDate) ?? null;
   if (!name) { RT.toast('Name required', 'warn'); return; }
   const res = editingHeatId
-    ? await RT.put(`/api/races/${selectedRaceId}/heats/${editingHeatId}`, { name, color, shape })
-    : await RT.post(`/api/races/${selectedRaceId}/heats`, { name, color, shape });
+    ? await RT.put(`/api/races/${selectedRaceId}/heats/${editingHeatId}`, { name, color, shape, start_time })
+    : await RT.post(`/api/races/${selectedRaceId}/heats`, { name, color, shape, start_time });
   if (res.ok) { closeModal('heat-modal'); await loadHeatsClasses(); RT.toast('Heat saved', 'ok'); }
   else RT.toast(res.error, 'warn');
 }

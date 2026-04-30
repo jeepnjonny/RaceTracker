@@ -239,6 +239,11 @@ try { db.prepare('ALTER TABLE races ADD COLUMN feat_stopped INTEGER NOT NULL DEF
 try { db.prepare('ALTER TABLE races ADD COLUMN checkpoint_radius INTEGER DEFAULT 50').run(); } catch {}
 try { db.prepare("ALTER TABLE races ADD COLUMN speed_units TEXT NOT NULL DEFAULT 'min_mile'").run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN clock_seconds INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN start_time INTEGER').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN start_window_open INTEGER DEFAULT 0').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN start_window_ts INTEGER').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN start_clearance INTEGER DEFAULT 400').run(); } catch {}
+try { db.prepare('ALTER TABLE heats ADD COLUMN start_time INTEGER').run(); } catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

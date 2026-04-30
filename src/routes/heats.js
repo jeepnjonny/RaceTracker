@@ -10,20 +10,21 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireRole('admin', 'operator'), (req, res) => {
-  const { name, color, shape } = req.body;
+  const { name, color, shape, start_time } = req.body;
   if (!name) return res.status(400).json({ ok: false, error: 'name required' });
-  const result = db.prepare('INSERT INTO heats (race_id, name, color, shape) VALUES (?,?,?,?)')
-    .run(req.params.raceId, name, color || '#58a6ff', shape || 'circle');
-  res.json({ ok: true, data: { id: result.lastInsertRowid, race_id: req.params.raceId, name, color: color || '#58a6ff', shape: shape || 'circle' } });
+  const result = db.prepare('INSERT INTO heats (race_id, name, color, shape, start_time) VALUES (?,?,?,?,?)')
+    .run(req.params.raceId, name, color || '#58a6ff', shape || 'circle', start_time || null);
+  res.json({ ok: true, data: db.prepare('SELECT * FROM heats WHERE id=?').get(result.lastInsertRowid) });
 });
 
 router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
-  const { name, color, shape } = req.body;
+  const { name, color, shape, start_time } = req.body;
   const heat = db.prepare('SELECT * FROM heats WHERE id=? AND race_id=?').get(req.params.id, req.params.raceId);
   if (!heat) return res.status(404).json({ ok: false, error: 'Heat not found' });
-  db.prepare('UPDATE heats SET name=?, color=?, shape=? WHERE id=?')
-    .run(name ?? heat.name, color ?? heat.color, shape ?? heat.shape, req.params.id);
-  res.json({ ok: true, data: { ...heat, name: name ?? heat.name, color: color ?? heat.color, shape: shape ?? heat.shape } });
+  const newStartTime = start_time !== undefined ? (start_time || null) : heat.start_time;
+  db.prepare('UPDATE heats SET name=?, color=?, shape=?, start_time=? WHERE id=?')
+    .run(name ?? heat.name, color ?? heat.color, shape ?? heat.shape, newStartTime, req.params.id);
+  res.json({ ok: true, data: db.prepare('SELECT * FROM heats WHERE id=?').get(req.params.id) });
 });
 
 router.delete('/:id', requireRole('admin'), (req, res) => {
