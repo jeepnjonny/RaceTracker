@@ -57,7 +57,7 @@ function enrichParticipant(p) {
 }
 
 router.get('/', requireAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM participants WHERE race_id=? ORDER BY bib').all(req.params.raceId);
+  const rows = db.prepare('SELECT * FROM participants WHERE race_id=? ORDER BY CAST(bib AS INTEGER), bib').all(req.params.raceId);
   res.json({ ok: true, data: rows.map(enrichParticipant) });
 });
 
@@ -199,7 +199,7 @@ const stmtUpsertParticipant = db.prepare(`
 `);
 const stmtFindHeat  = db.prepare('SELECT id FROM heats WHERE race_id=? AND name=?');
 const stmtFindClass = db.prepare('SELECT id FROM classes WHERE race_id=? AND name=?');
-const stmtAllParticipants = db.prepare('SELECT * FROM participants WHERE race_id=? ORDER BY bib');
+const stmtAllParticipants = db.prepare('SELECT * FROM participants WHERE race_id=? ORDER BY CAST(bib AS INTEGER), bib');
 
 router.post('/import', requireRole('admin', 'operator'), (req, res) => {
   const { csv } = req.body;
