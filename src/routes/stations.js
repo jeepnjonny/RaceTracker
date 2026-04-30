@@ -76,8 +76,10 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
 });
 
 router.delete('/:id', requireRole('admin'), (req, res) => {
-  const result = db.prepare('DELETE FROM stations WHERE id=? AND race_id=?').run(req.params.id, req.params.raceId);
-  if (!result.changes) return res.status(404).json({ ok: false, error: 'Station not found' });
+  const s = db.prepare('SELECT id FROM stations WHERE id=? AND race_id=?').get(req.params.id, req.params.raceId);
+  if (!s) return res.status(404).json({ ok: false, error: 'Station not found' });
+  db.prepare('UPDATE events SET station_id=NULL WHERE station_id=?').run(req.params.id);
+  db.prepare('DELETE FROM stations WHERE id=?').run(req.params.id);
   wsManager.broadcast({ type: 'station_update', data: { action: 'delete', id: parseInt(req.params.id) } });
   res.json({ ok: true });
 });
