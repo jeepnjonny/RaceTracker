@@ -856,7 +856,7 @@ function updateRacePill(r) {
 function showViewerLink() {
   if (!race?.viewer_token) { RT.toast('No active race', 'warn'); return; }
   const url = window.location.origin + RT.BASE + 'view/' + race.viewer_token;
-  document.getElementById('viewer-url').textContent = url;
+  document.getElementById('viewer-url').innerHTML = `<a href="${url}" target="_blank" rel="noopener" style="color:var(--accent2);text-decoration:underline">${url}</a>`;
   const qrEl = document.getElementById('viewer-qr');
   qrEl.innerHTML = '';
   if (typeof QRCode !== 'undefined') {
