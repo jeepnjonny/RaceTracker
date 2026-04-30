@@ -420,8 +420,14 @@ function checkBetweenBeaconStations(participant, race, lat, lon, timestamp) {
 
   if (currEff <= prev.eff) return; // moved backward or no progress
 
+  // Clearance: don't fire while participant is still inside (or just exiting) a geofence.
+  // Restores the key safety check from the old code. For fast vehicles this is negligible
+  // (5 km gaps vs 50 m buffer); for normal pace it prevents a duplicate depart when the
+  // geofence already caught the arrive but hasn't yet caught the depart.
+  const clearance = race.checkpoint_radius || 50;
+
   const stations = db.prepare(
-    `SELECT * FROM stations WHERE race_id=? AND type IN ('aid','checkpoint','turnaround')
+    `SELECT * FROM stations WHERE race_id=? AND type IN ('start','start_finish','aid','checkpoint','turnaround')
      AND lat IS NOT NULL AND lon IS NOT NULL`
   ).all(race.id);
 
@@ -430,32 +436,51 @@ function checkBetweenBeaconStations(participant, race, lat, lon, timestamp) {
       station.lat, station.lon, route.points, route.meta
     ).distanceAlongRoute;
 
-    // For OAB non-turnaround stations: two passes (outbound eff=S, return eff=2T-S)
-    const passes = (isOAB && station.type !== 'turnaround')
+    const isStart = station.type === 'start' || station.type === 'start_finish';
+
+    // Start stations are outbound-only; aid/checkpoint/turnaround check both legs on OAB
+    const passes = (!isStart && isOAB && station.type !== 'turnaround')
       ? [{ eff: stationAlong, pass: 1 }, { eff: 2 * totalDist - stationAlong, pass: 2 }]
       : [{ eff: stationAlong, pass: 1 }];
 
     for (const { eff: stationEff, pass } of passes) {
-      if (stationEff <= prev.eff || stationEff > currEff) continue; // not in this beacon gap
+      // Must be in this beacon gap AND far enough past to clear the geofence
+      if (stationEff <= prev.eff || stationEff + clearance > currEff) continue;
 
       const key = `${participant.id}_${station.id}_${pass}`;
       if (backfilledStationEvents.has(key)) continue;
       backfilledStationEvents.add(key);
 
-      const existingCount = db.prepare(
-        `SELECT COUNT(*) as cnt FROM events
-         WHERE participant_id=? AND station_id=? AND event_type='aid_depart'`
-      ).get(participant.id, station.id).cnt;
+      if (isStart) {
+        const hasStart = db.prepare(
+          `SELECT 1 FROM events WHERE participant_id=? AND race_id=? AND event_type='start' LIMIT 1`
+        ).get(participant.id, race.id);
+        if (hasStart) continue;
 
-      if (pass === 1 && existingCount >= 1) continue; // outbound already logged
-      if (pass === 2 && existingCount !== 1) continue; // need exactly 1 outbound to log return
+        const startTs = participant.start_time
+          || interpolateTs(prev.ts, prev.eff, timestamp, currEff, stationEff);
+        db.prepare("UPDATE participants SET status='active', start_time=COALESCE(start_time,?) WHERE id=?")
+          .run(startTs, participant.id);
+        participant.status = 'active';
+        if (!participant.start_time) participant.start_time = startTs;
 
-      const stationTs = interpolateTs(prev.ts, prev.eff, timestamp, currEff, stationEff);
-      const note = pass === 2 ? 'auto-backfilled (return)' : 'auto-backfilled';
+        emitBackfill(race.id, participant, 'start', station, startTs, 'auto-backfilled', false);
+        logger.log('race', 'info', `BACKFILL start — ${participant.name} (#${participant.bib})`);
+      } else {
+        const existingCount = db.prepare(
+          `SELECT COUNT(*) as cnt FROM events
+           WHERE participant_id=? AND station_id=? AND event_type='aid_depart'`
+        ).get(participant.id, station.id).cnt;
 
-      const event = emitBackfill(race.id, participant, 'aid_depart', station, stationTs, note, hasTurnaround || pass === 2);
-      logger.log('race', 'info',
-        `BACKFILL depart — ${participant.name} (#${participant.bib}) at ${station.name} pass ${pass}`);
+        if (pass === 1 && existingCount >= 1) continue;
+        if (pass === 2 && existingCount !== 1) continue;
+
+        const stationTs = interpolateTs(prev.ts, prev.eff, timestamp, currEff, stationEff);
+        const note = pass === 2 ? 'auto-backfilled (return)' : 'auto-backfilled';
+        emitBackfill(race.id, participant, 'aid_depart', station, stationTs, note, hasTurnaround || pass === 2);
+        logger.log('race', 'info',
+          `BACKFILL depart — ${participant.name} (#${participant.bib}) at ${station.name} pass ${pass}`);
+      }
     }
   }
 }

@@ -116,15 +116,44 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
   }
   if (!Object.keys(updates).length) return res.json({ ok: true, data: enrichParticipant(p) });
 
+  // If a past start_time is being set while status would remain 'dns', auto-activate.
+  // This covers the common case of manually entering a start time after the fact.
+  const raceId = parseInt(req.params.raceId);
+  const now = Math.floor(Date.now() / 1000);
+  const settingPastStart = updates.start_time && updates.start_time < now;
+  const statusAfter = updates.status || p.status;
+  if (settingPastStart && statusAfter === 'dns') {
+    updates.status = 'active';
+  }
+
   const sets = Object.keys(updates).map(k => `${k}=?`).join(',');
   db.prepare(`UPDATE participants SET ${sets} WHERE id=?`).run(...Object.values(updates), p.id);
+
+  // Synthesize start event when activating without one
+  if (updates.status === 'active' && p.status === 'dns') {
+    const hasStart = db.prepare(
+      `SELECT 1 FROM events WHERE participant_id=? AND race_id=? AND event_type='start' LIMIT 1`
+    ).get(p.id, raceId);
+    if (!hasStart) {
+      const startStn = db.prepare(
+        `SELECT * FROM stations WHERE race_id=? AND type IN ('start','start_finish') AND lat IS NOT NULL LIMIT 1`
+      ).get(raceId);
+      const startTs = updates.start_time || p.start_time || now;
+      if (startStn) {
+        db.prepare(`INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp, notes, manual)
+                    VALUES (?,?,?,?,?,?,1)`)
+          .run(raceId, p.id, 'start', startStn.id, startTs, 'manually activated');
+      }
+    }
+  }
+
   const updated = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(p.id));
   wsManager.broadcast({ type: 'participant_update', data: { action: 'update', participant: updated } });
   aprsClient.notifyRosterChange();
   if (updates.status && updates.status !== p.status) {
     logger.log('race', 'info', `Status change — #${updated.bib} ${updated.name}: ${p.status} → ${updates.status}`);
     if (updates.status === 'finished' || updates.status === 'dnf') {
-      setImmediate(() => mqttClient.auditMissedStations(p.id, parseInt(req.params.raceId)));
+      setImmediate(() => mqttClient.auditMissedStations(p.id, raceId));
     }
   }
   res.json({ ok: true, data: updated });
