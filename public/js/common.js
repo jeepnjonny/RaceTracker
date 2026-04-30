@@ -185,7 +185,8 @@ const RT = (() => {
     const sel = document.createElement('select');
     sel.className = 'rt-theme-sel';
     sel.title = 'Display theme';
-    sel.style.cssText = 'font-size:11px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer;flex-shrink:0';
+    const inViewer = !!document.getElementById('viewer-topbar');
+    sel.style.cssText = 'font-size:11px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer;flex-shrink:0;width:auto' + (inViewer ? ';margin-left:auto' : '');
     sel.innerHTML = THEMES.map(t => `<option value="${t.id}"${t.id === id ? ' selected' : ''}>${t.label}</option>`).join('');
     sel.onchange = () => applyTheme(sel.value);
     // Prepend into topbar-right; for viewer-topbar append before the toggle button
