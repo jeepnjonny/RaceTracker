@@ -135,7 +135,7 @@ function handleInit(data) {
 function enrichParticipant(p, registry) {
   const heat = p.heat_id ? heats[p.heat_id] : null;
   const reg = registry ? registry.find(r => r.node_id === p.tracker_id || r.long_name === p.tracker_id) : null;
-  return { ...p, heat, registry: reg };
+  return { ...p, heat, registry: reg, _lastStation: p.last_station_name || null };
 }
 
 function renderRoute() {
@@ -219,6 +219,8 @@ function handleEvent(data) {
     const along = getStationAlongMap().get(data.station_id);
     if (along != null) p._stationFloor = Math.max(p._stationFloor ?? 0, along);
   }
+  if (data.event_type === 'aid_depart' && data.station_name)
+    p._lastStation = data.station_name;
   renderLeaderboard();
 }
 
@@ -254,12 +256,14 @@ function renderLeaderboard() {
     const dot = heat ? `<span class="dot" style="background:${heat.color}"></span>` : '';
     const pct = p._pct != null ? `${p._pct.toFixed(0)}%` : '--';
     const finished = p.status === 'finished';
+    const lastAid = p._lastStation || '--';
     return `<div class="v-lb-row v-lb-cols ${finished ? 'text-ok' : ''}">
       <span style="color:var(--text3)">${i+1}</span>
       <span style="color:${sc};font-weight:bold">${p.bib}</span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dot} ${p.name}</span>
       <span style="color:var(--accent)">${pct}</span>
       <span style="color:var(--text2);font-size:11px">${p._pct && p.start_time ? fmtPace(p) : '--'}</span>
+      <span style="color:var(--text3);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lastAid}</span>
     </div>`;
   }).join('');
 }

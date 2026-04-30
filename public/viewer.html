@@ -40,7 +40,7 @@
   .v-sort-btn.active { border-color: var(--accent); color: var(--accent); }
 
   /* Leaderboard grid — named areas so responsive override is clean */
-  .v-lb-cols { grid-template-columns: 22px 28px 1fr 50px 52px; }
+  .v-lb-cols { grid-template-columns: 22px 28px 1fr 44px 50px 72px; }
   .v-lb-head {
     font-size: 11px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase;
     display: grid; gap: 4px; padding: 4px 8px;
@@ -63,8 +63,8 @@
     #view-toggle { display: flex; }
     body.lb-mode #viewer-map-wrap { display: none; }
     body.lb-mode #viewer-lb-wrap { display: flex; width: 100%; }
-    /* Narrower columns on small screens: drop the pace column or shrink */
-    .v-lb-cols { grid-template-columns: 20px 26px 1fr 46px 44px; }
+    /* Narrower columns on small screens */
+    .v-lb-cols { grid-template-columns: 18px 24px 1fr 38px 42px 60px; }
     .v-lb-row, .v-lb-head { padding: 4px 6px; font-size: 12px; gap: 3px; }
   }
 
@@ -117,7 +117,7 @@
       <button class="v-sort-btn" data-sort="heat" onclick="VW.setSort('heat')">HEAT</button>
     </div>
     <div class="v-lb-head v-lb-cols">
-      <span>#</span><span>BIB</span><span>NAME</span><span>PROGRESS</span><span>PACE</span>
+      <span>#</span><span>BIB</span><span>NAME</span><span>PROG</span><span>PACE</span><span>LAST AID</span>
     </div>
     <div id="viewer-lb-body"></div>
   </div>

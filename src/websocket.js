@@ -83,7 +83,11 @@ function sendInit(ws, user) {
                SELECT 1 FROM events e
                JOIN stations s ON e.station_id = s.id
                WHERE e.participant_id = p.id AND e.race_id = p.race_id AND s.type = 'turnaround'
-             ) as has_turnaround
+             ) as has_turnaround,
+             (SELECT s.name FROM events e JOIN stations s ON e.station_id = s.id
+              WHERE e.participant_id = p.id AND e.race_id = p.race_id
+              AND e.event_type = 'aid_depart'
+              ORDER BY e.timestamp DESC LIMIT 1) as last_station_name
       FROM participants p
       LEFT JOIN heats h ON p.heat_id = h.id
       LEFT JOIN classes c ON p.class_id = c.id
