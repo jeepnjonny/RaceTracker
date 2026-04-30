@@ -379,7 +379,7 @@ function startClock() {
     const active = Object.values(participants).find(p => p.status === 'active' && p.start_time);
     if (!active) return;
     const elapsed = Math.floor(Date.now()/1000) - active.start_time;
-    document.getElementById('vw-clock').textContent = RT.fmtElapsed(elapsed > 0 ? elapsed : 0);
+    document.getElementById('vw-clock').textContent = RT.fmtElapsed(elapsed > 0 ? elapsed : 0, race?.clock_seconds !== 0);
   }, 1000);
 }
 

@@ -19,7 +19,7 @@ const LAYER_LEGENDS = {
   'Wind Speed':    { label:'WIND (m/s)',        grad:'#ffffff,#64c8fa,#1464d2,#00be00,#fafa00,#fa6400,#fa0000', ticks:['0','5','15','25','50','200'] },
   'Temperature':   { label:'TEMPERATURE (°F)', grad:'#820eb4,#1464d2,#20e8e8,#28b428,#f0f032,#fa8c32,#fa3232', ticks:['-4','32','59','86','104'] },
 };
-let clockInterval = null, missingCheckInterval = null, stoppedCheckInterval = null;
+let clockInterval = null, missingCheckInterval = null, stoppedCheckInterval = null, lastSeenInterval = null;
 let fmt24 = false;
 let editingPId = null;
 
@@ -555,7 +555,7 @@ async function showParticipantInfo(id) {
       <div class="info-field"><span class="lbl">FINISH</span><span class="val">${RT.fmtTime(p.finish_time, fmt24)}</span></div>
       <div class="info-field"><span class="lbl">PROGRESS</span><span class="val text-accent">${pct != null ? pct.toFixed(1)+'%' : '—'}</span></div>
       <div class="info-field"><span class="lbl">BATTERY</span><span class="val">${reg?.battery_level != null ? reg.battery_level+'%' : '—'}</span></div>
-      <div class="info-field"><span class="lbl">LAST SEEN</span><span class="val">${RT.timeAgo(reg?.last_seen)}</span></div>
+      <div class="info-field"><span class="lbl">LAST SEEN</span><span class="val" id="info-last-seen" data-ts="${reg?.last_seen || 0}">${RT.timeAgo(reg?.last_seen)}</span></div>
       <div class="info-field"><span class="lbl">TRACKER</span><span class="val text-dim" style="font-size:11px">${p.tracker_id||'—'}</span></div>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:8px">
@@ -595,6 +595,13 @@ async function showParticipantInfo(id) {
             </span>
           </div>`).join('')}
     </div>`;
+
+  clearInterval(lastSeenInterval);
+  lastSeenInterval = setInterval(() => {
+    const span = document.getElementById('info-last-seen');
+    if (!span) { clearInterval(lastSeenInterval); return; }
+    span.textContent = RT.timeAgo(+span.dataset.ts);
+  }, 1000);
 }
 
 function formatEventType(t) {
@@ -603,6 +610,7 @@ function formatEventType(t) {
 }
 
 function showStationInfo(id) {
+  clearInterval(lastSeenInterval);
   selectedStationId = id;
   selectedPId = null;
   const s = stations.find(x => x.id === id);
@@ -918,6 +926,7 @@ function renderAlertsList() {
         <div style="font-weight:bold">${a.type?.replace('_',' ').toUpperCase()}</div>
         <div class="text-dim" style="font-size:11px">#${a.bib} ${a.name} · ${RT.fmtTime(a.timestamp, fmt24)}</div>
         ${a.distanceFromRoute ? `<div style="font-size:11px">${a.distanceFromRoute}m off course</div>` : ''}
+        ${a.battery != null ? `<div style="font-size:11px">${a.battery}% battery remaining</div>` : ''}
       </div>
       <button style="margin-left:auto;font-size:11px;padding:2px 6px" onclick="OP.dismissAlert(${a.id})">✕</button>
     </div>`
@@ -1078,7 +1087,7 @@ function startClock() {
     const now = Math.floor(Date.now() / 1000);
     const active = Object.values(participants).find(p => p.status === 'active' && p.start_time);
     const elapsed = active ? now - active.start_time : 0;
-    document.getElementById('race-clock').textContent = RT.fmtElapsed(elapsed > 0 ? elapsed : 0);
+    document.getElementById('race-clock').textContent = RT.fmtElapsed(elapsed > 0 ? elapsed : 0, race?.clock_seconds !== 0);
   }, 1000);
 }
 

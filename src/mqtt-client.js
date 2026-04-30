@@ -109,14 +109,37 @@ function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi,
 
 function handleTelemetry({ nodeId, battery, voltage, timestamp }) {
   if (!nodeId) return;
+  const batteryPct = battery ?? voltageToPct(voltage);
   db.prepare(`
     INSERT INTO tracker_registry (node_id, battery_level, voltage, last_seen)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(node_id) DO UPDATE SET
-      battery_level=excluded.battery_level, voltage=excluded.voltage, last_seen=excluded.last_seen
-  `).run(nodeId, battery ?? null, voltage ?? null, timestamp);
+      battery_level=COALESCE(excluded.battery_level, battery_level),
+      voltage=COALESCE(excluded.voltage, voltage),
+      last_seen=excluded.last_seen
+  `).run(nodeId, batteryPct ?? null, voltage ?? null, timestamp);
 
-  broadcast('tracker_info', { nodeId, battery, voltage, timestamp });
+  broadcast('tracker_info', { nodeId, battery: batteryPct, voltage, timestamp });
+
+  if (batteryPct != null && batteryPct < 20) {
+    const alertKey = nodeId + '_lowbatt';
+    const last = lastLowBatteryAlert.get(alertKey) || 0;
+    if (timestamp - last > 600) {
+      lastLowBatteryAlert.set(alertKey, timestamp);
+      const row = db.prepare(`
+        SELECT p.id, p.bib, p.name FROM participants p
+        WHERE p.tracker_id = ?
+        AND p.race_id IN (SELECT id FROM races WHERE status='active')
+        LIMIT 1
+      `).get(nodeId);
+      if (row) {
+        logger.log('race', 'warn', `LOW BATTERY — ${row.name} (#${row.bib}) tracker ${nodeId} at ${batteryPct}%`);
+        broadcast('alert', { type: 'low_battery', participantId: row.id, bib: row.bib, name: row.name, battery: batteryPct, nodeId, timestamp });
+      }
+    }
+  } else if (batteryPct != null && batteryPct >= 20) {
+    lastLowBatteryAlert.delete(nodeId + '_lowbatt');
+  }
 }
 
 function handleNodeInfo({ nodeId, longName, shortName, hwModel, timestamp }) {
@@ -401,6 +424,14 @@ function checkMissedStations(participant, race, lat, lon, timestamp, speed) {
 }
 
 const lastOffCourseAlert = new Map();
+const lastLowBatteryAlert = new Map();
+
+function voltageToPct(voltage) {
+  if (voltage == null) return null;
+  // 2S LiPo: 6.0–8.4V; 1S LiPo: 3.0–4.2V
+  if (voltage > 4.5) return Math.round(Math.max(0, Math.min(100, (voltage - 6.0) / 2.4 * 100)));
+  return Math.round(Math.max(0, Math.min(100, (voltage - 3.0) / 1.2 * 100)));
+}
 
 function checkOffCourse(participant, race, lat, lon, timestamp) {
   if (!race.feat_off_course || !race.off_course_distance) return;

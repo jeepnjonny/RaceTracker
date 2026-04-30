@@ -214,6 +214,7 @@ async function openRaceModal(id) {
   document.getElementById('rm-name').value           = race?.name || '';
   document.getElementById('rm-date').value           = race?.date || new Date().toISOString().split('T')[0];
   document.getElementById('rm-time-format').value    = race?.time_format || '24h';
+  document.getElementById('rm-clock-seconds').value  = String(race?.clock_seconds ?? 1);
   document.getElementById('rm-missing-timer').value  = Math.round((race?.missing_timer || 3600) / 60);
   document.getElementById('rm-geofence').value            = race?.geofence_radius || 15;
   document.getElementById('rm-checkpoint-radius').value   = race?.checkpoint_radius || 50;
@@ -244,6 +245,7 @@ async function saveRace() {
     name:                document.getElementById('rm-name').value.trim(),
     date:                document.getElementById('rm-date').value,
     time_format:         document.getElementById('rm-time-format').value,
+    clock_seconds:       parseInt(document.getElementById('rm-clock-seconds').value),
     missing_timer:       parseInt(document.getElementById('rm-missing-timer').value) * 60,
     geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
     checkpoint_radius:   parseInt(document.getElementById('rm-checkpoint-radius').value),

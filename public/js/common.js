@@ -74,9 +74,10 @@ const RT = (() => {
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
   }
 
-  function fmtElapsed(seconds) {
+  function fmtElapsed(seconds, showSecs = true) {
     if (seconds == null || isNaN(seconds)) return '--';
     const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
+    if (!showSecs) return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
 
