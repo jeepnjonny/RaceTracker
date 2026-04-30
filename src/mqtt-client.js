@@ -655,10 +655,12 @@ function processJsonMessage(msg) {
   const ts = msg.timestamp || Math.floor(Date.now() / 1000);
 
   // Opportunistically capture node identity from any message that carries it.
-  // Meshtastic includes long_name/short_name in nodeinfo and map_report, and
-  // some router firmware embeds them at the top level of other message types.
-  const longName  = msg.long_name  ?? msg.payload?.long_name  ?? null;
-  const shortName = msg.short_name ?? msg.payload?.short_name ?? null;
+  // Meshtastic JSON uses camelCase-free keys: longname/shortname (no underscore).
+  // Some firmware and map_report use long_name/short_name. Check both.
+  const longName  = msg.long_name  ?? msg.longname
+                 ?? msg.payload?.long_name ?? msg.payload?.longname  ?? null;
+  const shortName = msg.short_name ?? msg.shortname
+                 ?? msg.payload?.short_name ?? msg.payload?.shortname ?? null;
   const hwModel   = msg.hardware   ?? msg.payload?.hardware   ?? null;
   if (longName || shortName || hwModel) {
     handleNodeInfo({ nodeId: fromHex, longName, shortName, hwModel, timestamp: ts });
@@ -683,12 +685,16 @@ function processJsonMessage(msg) {
     handleTelemetry({ nodeId: fromHex, battery: p.battery_level, voltage: p.voltage, timestamp: ts });
   } else if (msg.type === 'nodeinfo' && msg.payload) {
     const p = msg.payload;
-    // Explicit nodeinfo — already handled by the opportunistic block above,
-    // but call again in case hardware model is only here and names were null.
-    handleNodeInfo({ nodeId: fromHex, longName: p.long_name, shortName: p.short_name, hwModel: p.hardware, timestamp: ts });
+    handleNodeInfo({ nodeId: fromHex,
+      longName:  p.longname  ?? p.long_name  ?? null,
+      shortName: p.shortname ?? p.short_name ?? null,
+      hwModel: p.hardware, timestamp: ts });
   } else if (msg.type === 'map_report' && msg.payload) {
     const p = msg.payload;
-    handleNodeInfo({ nodeId: fromHex, longName: p.long_name, shortName: p.short_name, hwModel: p.hardware ?? p.hw_model, timestamp: ts });
+    handleNodeInfo({ nodeId: fromHex,
+      longName:  p.longname  ?? p.long_name  ?? null,
+      shortName: p.shortname ?? p.short_name ?? null,
+      hwModel: p.hardware ?? p.hw_model, timestamp: ts });
   } else if (msg.type === 'text') {
     const toHex = typeof msg.to === 'number' ? nodeIdHex(msg.to) : (msg.to || '');
     handleTextMessage({ fromNodeId: fromHex, toNodeId: toHex, text: msg.payload, timestamp: ts });
