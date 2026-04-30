@@ -1,0 +1,15 @@
+/* Theme C: High-Vis Day (bright sunlight / outdoors) */
+:root {
+  --bg:      #e8e8e8;
+  --surface: #ffffff;
+  --surface2:#d4d4d4;
+  --border:  #999999;
+  --accent:  #0044cc;
+  --accent2: #006600;
+  --accent3: #cc0000;
+  --accent4: #885500;
+  --text:    #0a0a0a;
+  --text2:   #333333;
+  --text3:   #666666;
+  --font:    'Courier New', monospace;
+}

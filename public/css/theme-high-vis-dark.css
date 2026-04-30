@@ -1,0 +1,15 @@
+/* Theme B: High-Vis Dark (night / low-light) */
+:root {
+  --bg:      #000000;
+  --surface: #111111;
+  --surface2:#1c1c1c;
+  --border:  #3a3a3a;
+  --accent:  #ffe000;
+  --accent2: #00ff55;
+  --accent3: #ff3333;
+  --accent4: #ff8800;
+  --text:    #ffffff;
+  --text2:   #dddddd;
+  --text3:   #888888;
+  --font:    'Courier New', monospace;
+}

@@ -1,0 +1,15 @@
+/* Theme E: Eclipse (VS Code-style charcoal) */
+:root {
+  --bg:      #1e1e1e;
+  --surface: #252526;
+  --surface2:#2d2d2d;
+  --border:  #3e3e42;
+  --accent:  #4fc1ff;
+  --accent2: #4ec9b0;
+  --accent3: #f48771;
+  --accent4: #dcdcaa;
+  --text:    #d4d4d4;
+  --text2:   #9d9d9d;
+  --text3:   #555555;
+  --font:    'Courier New', monospace;
+}

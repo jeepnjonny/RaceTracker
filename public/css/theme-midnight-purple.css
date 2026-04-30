@@ -1,0 +1,15 @@
+/* Theme F: Midnight Purple (Dracula-inspired) */
+:root {
+  --bg:      #0d0d1a;
+  --surface: #16163a;
+  --surface2:#1e1e4a;
+  --border:  #32326a;
+  --accent:  #bd93f9;
+  --accent2: #50fa7b;
+  --accent3: #ff5555;
+  --accent4: #ffb86c;
+  --text:    #f8f8f2;
+  --text2:   #bfbfbf;
+  --text3:   #6272a4;
+  --font:    'Courier New', monospace;
+}

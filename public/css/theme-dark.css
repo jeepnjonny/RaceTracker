@@ -1,0 +1,15 @@
+/* Theme A: Dark (default) */
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --surface2:#21262d;
+  --border:  #30363d;
+  --accent:  #58a6ff;
+  --accent2: #3fb950;
+  --accent3: #f78166;
+  --accent4: #d2a679;
+  --text:    #e6edf3;
+  --text2:   #8b949e;
+  --text3:   #484f58;
+  --font:    'Courier New', monospace;
+}

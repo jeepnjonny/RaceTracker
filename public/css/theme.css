@@ -14,50 +14,6 @@
   --font:     'Courier New', monospace;
 }
 
-/* ── THEME B: High-Vis Dark (night / low-light) ──────────────────────────── */
-[data-theme="b"] {
-  --bg:       #000000;
-  --surface:  #111111;
-  --surface2: #1c1c1c;
-  --border:   #3a3a3a;
-  --accent:   #ffe000;
-  --accent2:  #00ff55;
-  --accent3:  #ff3333;
-  --accent4:  #ff8800;
-  --text:     #ffffff;
-  --text2:    #dddddd;
-  --text3:    #888888;
-}
-
-/* ── THEME C: High-Vis Day (bright sunlight / outdoors) ──────────────────── */
-[data-theme="c"] {
-  --bg:       #e8e8e8;
-  --surface:  #ffffff;
-  --surface2: #d4d4d4;
-  --border:   #999999;
-  --accent:   #0044cc;
-  --accent2:  #006600;
-  --accent3:  #cc0000;
-  --accent4:  #885500;
-  --text:     #0a0a0a;
-  --text2:    #333333;
-  --text3:    #666666;
-}
-
-/* ── THEME D: Amber Cockpit (aviation / all-conditions) ──────────────────── */
-[data-theme="d"] {
-  --bg:       #090700;
-  --surface:  #130f00;
-  --surface2: #1e1700;
-  --border:   #3d3000;
-  --accent:   #ffe033;
-  --accent2:  #44dd44;
-  --accent3:  #ff5522;
-  --accent4:  #ffaa44;
-  --text:     #ffc800;
-  --text2:    #cc9900;
-  --text3:    #664d00;
-}
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

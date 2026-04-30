@@ -147,31 +147,52 @@ const RT = (() => {
 
   // ── Theme ─────────────────────────────────────────────────────────────────
   const THEMES = [
-    { id: 'a', label: 'Dark' },
-    { id: 'b', label: 'High-Vis Dark' },
-    { id: 'c', label: 'High-Vis Day' },
-    { id: 'd', label: 'Amber' },
+    { id: 'dark',             label: 'Dark' },
+    { id: 'high-vis-dark',    label: 'High-Vis Dark' },
+    { id: 'high-vis-day',     label: 'High-Vis Day' },
+    { id: 'amber',            label: 'Amber' },
+    { id: 'eclipse',          label: 'Eclipse' },
+    { id: 'midnight-purple',  label: 'Purple' },
+    { id: 'terminal-green',   label: 'Terminal' },
   ];
 
+  // Migrate old single-letter IDs from localStorage
+  const _legacyMap = { a: 'dark', b: 'high-vis-dark', c: 'high-vis-day', d: 'amber' };
+
   function applyTheme(id) {
-    if (id && id !== 'a') document.documentElement.setAttribute('data-theme', id);
-    else document.documentElement.removeAttribute('data-theme');
-    localStorage.setItem('rt-theme', id || 'a');
+    id = _legacyMap[id] || id || 'dark';
+    let link = document.getElementById('rt-theme-css');
+    if (!link) {
+      link = document.createElement('link');
+      link.id = 'rt-theme-css';
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+    link.href = BASE + 'css/theme-' + id + '.css';
+    localStorage.setItem('rt-theme', id);
+    document.querySelectorAll('.rt-theme-sel').forEach(s => { s.value = id; });
   }
 
   // Apply immediately to avoid flash
-  applyTheme(localStorage.getItem('rt-theme') || 'a');
+  applyTheme(localStorage.getItem('rt-theme') || 'dark');
 
   function injectThemeSelector() {
-    const right = document.getElementById('topbar-right');
+    // Inject into operator/admin topbar-right, or viewer-topbar
+    const right = document.getElementById('topbar-right') || document.getElementById('viewer-topbar');
     if (!right) return;
-    const saved = localStorage.getItem('rt-theme') || 'a';
+    const saved = localStorage.getItem('rt-theme') || 'dark';
+    const id = _legacyMap[saved] || saved;
     const sel = document.createElement('select');
+    sel.className = 'rt-theme-sel';
     sel.title = 'Display theme';
-    sel.style.cssText = 'font-size:11px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer';
-    sel.innerHTML = THEMES.map(t => `<option value="${t.id}"${t.id === saved ? ' selected' : ''}>${t.label}</option>`).join('');
+    sel.style.cssText = 'font-size:11px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer;flex-shrink:0';
+    sel.innerHTML = THEMES.map(t => `<option value="${t.id}"${t.id === id ? ' selected' : ''}>${t.label}</option>`).join('');
     sel.onchange = () => applyTheme(sel.value);
-    right.prepend(sel);
+    // Prepend into topbar-right; for viewer-topbar append before the toggle button
+    const toggle = document.getElementById('view-toggle');
+    if (toggle) right.insertBefore(sel, toggle);
+    else if (document.getElementById('topbar-right')) right.prepend(sel);
+    else right.appendChild(sel);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectThemeSelector);
