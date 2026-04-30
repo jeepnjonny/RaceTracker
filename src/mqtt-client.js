@@ -100,6 +100,7 @@ function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi,
     if (participant) {
       checkGeofences(participant, activeRace, lat, lon, timestamp);
       checkOffCourse(participant, activeRace, lat, lon, timestamp);
+      checkMissedStations(participant, activeRace, lat, lon, timestamp, speed);
     }
   }
 
@@ -311,6 +312,85 @@ function getRouteData(race) {
     routeCache.set(race.id, data);
     return data;
   } catch { return null; }
+}
+
+// Tracks stations we've already backfilled for a given participant this session
+const backfilledStationEvents = new Set(); // `${participantId}_${stationId}`
+
+function checkMissedStations(participant, race, lat, lon, timestamp, speed) {
+  if (!(race.feat_auto_log ?? 1)) return;
+  // Only run when the participant is clearly moving; avoids backfilling for a device
+  // that just powered on after a long gap with no reliable position history.
+  if (!speed || speed < 0.3) return;
+
+  const route = getRouteData(race);
+  if (!route) return;
+
+  const { distanceAlongRoute: currentAlong } = geo.findPositionOnRoute(lat, lon, route.points, route.meta);
+
+  // Only consider aid/checkpoint/turnaround stations with known coordinates
+  const stations = db.prepare(
+    `SELECT * FROM stations WHERE race_id=? AND type IN ('aid','checkpoint','turnaround')
+     AND lat IS NOT NULL AND lon IS NOT NULL`
+  ).all(race.id);
+
+  const isOAB = race.race_format === 'out_and_back';
+  // Return-leg detection: if OAB, check for a turnaround event
+  const hasTurnaround = isOAB && !!(db.prepare(`
+    SELECT 1 FROM events WHERE participant_id=? AND race_id=?
+    AND station_id IN (SELECT id FROM stations WHERE race_id=? AND type='turnaround')
+    LIMIT 1
+  `).get(participant.id, race.id, race.id));
+
+  // On the OAB return leg the station ordering reverses; skip for now to avoid
+  // incorrect direction assumptions.
+  if (isOAB && hasTurnaround) return;
+
+  for (const station of stations) {
+    const key = `${participant.id}_${station.id}`;
+    if (backfilledStationEvents.has(key)) continue;
+
+    const stationAlong = geo.findPositionOnRoute(
+      station.lat, station.lon, route.points, route.meta
+    ).distanceAlongRoute;
+
+    // Participant must be this far past the station's geofence radius before we act
+    const clearance = (race.checkpoint_radius || 50) + 50;
+    if (currentAlong <= stationAlong + clearance) continue;
+
+    // Skip if any event already exists for this participant at this station
+    const existing = db.prepare(
+      'SELECT 1 FROM events WHERE participant_id=? AND station_id=? LIMIT 1'
+    ).get(participant.id, station.id);
+
+    backfilledStationEvents.add(key);
+    if (existing) continue;
+
+    // Back-calculate when they were likely at the station using current speed
+    const distPast = currentAlong - stationAlong;
+    const secsAgo = Math.round(distPast / speed);
+    const departTime = Math.max(
+      participant.start_time || (timestamp - 7200),
+      timestamp - secsAgo
+    );
+
+    const { lastInsertRowid } = db.prepare(
+      `INSERT INTO events (race_id, participant_id, event_type, station_id, timestamp, notes)
+       VALUES (?,?,?,?,?,?)`
+    ).run(race.id, participant.id, 'aid_depart', station.id, departTime, 'auto-backfilled');
+
+    const event = db.prepare(`
+      SELECT e.*, p.bib, p.name as participant_name, s.name as station_name
+      FROM events e
+      LEFT JOIN participants p ON e.participant_id = p.id
+      LEFT JOIN stations s ON e.station_id = s.id
+      WHERE e.id=?
+    `).get(lastInsertRowid);
+
+    logger.log('race', 'info',
+      `AUTO-BACKFILL depart — ${participant.name} (#${participant.bib}) at ${station.name} (est. ${secsAgo}s ago)`);
+    broadcast('event', { ...event, has_turnaround: hasTurnaround });
+  }
 }
 
 const lastOffCourseAlert = new Map();
@@ -555,6 +635,10 @@ function publishMessage(toNodeId, text) {
 
 function invalidateRouteCache(raceId) {
   routeCache.delete(raceId);
+  // Clear backfill cache so stations are re-evaluated against the new route
+  for (const key of backfilledStationEvents) {
+    backfilledStationEvents.delete(key);
+  }
 }
 
 module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition, handleTelemetry };
