@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RaceTracker — Theme Preview: Midnight Purple</title>
+<style>
+:root {
+  --bg:      #0d0d1a;
+  --surface: #16163a;
+  --surface2:#1e1e4a;
+  --border:  #32326a;
+  --accent:  #bd93f9;
+  --accent2: #50fa7b;
+  --accent3: #ff5555;
+  --accent4: #ffb86c;
+  --text:    #f8f8f2;
+  --text2:   #bfbfbf;
+  --text3:   #6272a4;
+  --font:    'Courier New', monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;min-height:100vh;display:flex;flex-direction:column}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:12px}
+.topbar h1{font-size:17px;font-weight:bold;letter-spacing:2px;color:var(--accent)}
+.pill{padding:3px 10px;border-radius:20px;font-size:13px;border:1px solid;white-space:nowrap}
+.pill-ok{border-color:var(--accent2);color:var(--accent2)}
+.pill-idle{border-color:var(--text3);color:var(--text2)}
+.pill-error{border-color:var(--accent3);color:var(--accent3)}
+.clock{font-size:20px;font-weight:bold;color:var(--accent2);letter-spacing:2px;margin-left:auto}
+.main{display:flex;flex:1;overflow:hidden}
+.panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;width:300px;flex-shrink:0}
+.panel-right{border-right:none;border-left:1px solid var(--border);width:280px}
+.map-area{flex:1;background:#08081a;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;position:relative;overflow:hidden}
+.map-grid{position:absolute;inset:0;opacity:0.07;background-image:linear-gradient(var(--accent) 1px,transparent 1px),linear-gradient(90deg,var(--accent) 1px,transparent 1px);background-size:40px 40px}
+.route{position:absolute;width:60%;height:50%;border:3px solid #f5a623;border-radius:40% 60% 50% 40%;opacity:0.5;top:25%;left:20%}
+.sort-bar{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.sort-btn{font-size:12px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer}
+.sort-btn.active{border-color:var(--accent);color:var(--accent)}
+.lb-head{font-size:12px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;display:grid;grid-template-columns:22px 28px 1fr 44px 50px;gap:4px;padding:4px 8px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.lb-row{display:grid;grid-template-columns:22px 28px 1fr 44px 50px;gap:4px;padding:5px 8px;border-bottom:1px solid var(--border);font-size:13px;align-items:center}
+.lb-row:hover{background:var(--surface2)}
+.lb-row.ok{color:var(--accent2)}
+.tabs{display:flex;border-bottom:1px solid var(--border)}
+.tab{flex:1;padding:8px 4px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;font-family:var(--font);cursor:pointer;letter-spacing:1px}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.info-panel{padding:10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1}
+.info-field .lbl{font-size:12px;color:var(--text3);letter-spacing:1px;text-transform:uppercase}
+.info-field .val{font-size:14px;color:var(--text)}
+.badge{font-size:12px;padding:1px 6px;border-radius:3px}
+.btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 14px;border-radius:6px;cursor:pointer;font-family:var(--font);font-size:14px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#000;font-weight:bold}
+.log-entry{padding:3px 6px;border-bottom:1px solid var(--border);display:flex;gap:6px;font-size:13px}
+.log-time{color:var(--text3);white-space:nowrap}
+.log-ok{color:var(--accent2)}
+.log-warn{color:var(--accent3)}
+.theme-name{position:absolute;bottom:12px;right:12px;font-size:11px;color:var(--text3);letter-spacing:2px;z-index:10}
+.stat-box{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;min-width:130px;position:absolute;top:10px;right:10px;z-index:10}
+.stat-box h3{font-size:11px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:8px}
+.stat-line{display:flex;justify-content:space-between;gap:12px;margin-bottom:3px}
+.stat-val{color:var(--accent);font-weight:bold}
+/* purple glow accents */
+.topbar{box-shadow:0 1px 20px rgba(189,147,249,.08)}
+.panel{box-shadow:2px 0 16px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>&#9654; RACETRACKER</h1>
+  <div class="pill pill-ok">RIDGELINE 50K — ACTIVE</div>
+  <div class="pill pill-ok">MQTT</div>
+  <div class="pill pill-idle">APRS</div>
+  <div class="clock">03:42:17</div>
+  <div class="pill pill-error">2 ALERTS</div>
+</div>
+<div class="main">
+  <div class="panel">
+    <div class="sort-bar">
+      <span style="font-size:11px;color:var(--text3);align-self:center">SORT:</span>
+      <div class="sort-btn active">POSITION</div>
+      <div class="sort-btn">BIB</div>
+      <div class="sort-btn">PACE</div>
+      <div class="sort-btn">NAME</div>
+    </div>
+    <div class="lb-head"><span>#</span><span>BIB</span><span>NAME</span><span>PROG</span><span>PACE</span></div>
+    <div class="lb-row"><span style="color:var(--text3)">1</span><span style="color:var(--accent2);font-weight:bold">104</span><span>&#9679; Martinez, A</span><span style="color:var(--accent)">78%</span><span style="color:var(--text2);font-size:11px">8:22</span></div>
+    <div class="lb-row"><span style="color:var(--text3)">2</span><span style="color:var(--accent2);font-weight:bold">87</span><span>&#9679; Chen, L</span><span style="color:var(--accent)">74%</span><span style="color:var(--text2);font-size:11px">8:41</span></div>
+    <div class="lb-row"><span style="color:var(--text3)">3</span><span style="color:var(--accent2);font-weight:bold">12</span><span>&#9679; Thompson, R</span><span style="color:var(--accent)">71%</span><span style="color:var(--text2);font-size:11px">9:05</span></div>
+    <div class="lb-row"><span style="color:var(--text3)">4</span><span style="color:var(--accent3);font-weight:bold">55</span><span style="opacity:.5">&#9679; Okafor, J</span><span style="color:var(--text3)">—</span><span style="color:var(--text3)">DNF</span></div>
+    <div class="lb-row"><span style="color:var(--text3)">5</span><span style="color:var(--accent2);font-weight:bold">33</span><span>&#9679; Park, S</span><span style="color:var(--accent)">61%</span><span style="color:var(--text2);font-size:11px">10:14</span></div>
+    <div class="lb-row ok"><span style="color:var(--text3)">6</span><span style="font-weight:bold">21</span><span>&#9679; Rivera, M</span><span>100%</span><span style="font-size:11px">9:33</span></div>
+    <div class="lb-row"><span style="color:var(--text3)">7</span><span style="color:var(--accent2);font-weight:bold">68</span><span>&#9679; Nguyen, T</span><span style="color:var(--accent)">52%</span><span style="color:var(--text2);font-size:11px">11:02</span></div>
+  </div>
+
+  <div class="map-area">
+    <div class="map-grid"></div>
+    <div class="route"></div>
+    <div style="font-size:32px;opacity:0.12;z-index:1">&#9654;</div>
+    <div class="stat-box">
+      <h3>Status</h3>
+      <div class="stat-line"><span>Active</span><span class="stat-val">6</span></div>
+      <div class="stat-line"><span>Finished</span><span class="stat-val" style="color:var(--accent2)">1</span></div>
+      <div class="stat-line"><span>DNF</span><span class="stat-val" style="color:var(--accent3)">1</span></div>
+      <div class="stat-line"><span>DNS</span><span class="stat-val" style="color:var(--text3)">2</span></div>
+      <div style="border-top:1px solid var(--border);margin:6px 0"></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">TOTAL DIST</div>
+      <div class="stat-val">31.1 mi</div>
+    </div>
+    <div class="theme-name">MIDNIGHT PURPLE</div>
+  </div>
+
+  <div class="panel panel-right">
+    <div class="tabs">
+      <div class="tab active">INFO</div>
+      <div class="tab">ALERTS <span style="color:var(--accent3)">2</span></div>
+      <div class="tab">MSG</div>
+      <div class="tab">LOG</div>
+    </div>
+    <div class="info-panel">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px;font-weight:bold">#104 Martinez, A</span>
+        <span class="badge" style="background:rgba(80,250,123,.12);color:var(--accent2)">ACTIVE</span>
+        <button class="btn" style="margin-left:auto;font-size:11px;padding:2px 8px">EDIT</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="info-field"><span class="lbl">HEAT</span><span class="val">Open M</span></div>
+        <div class="info-field"><span class="lbl">CLASS</span><span class="val">50K</span></div>
+        <div class="info-field"><span class="lbl">START</span><span class="val">6:00 AM</span></div>
+        <div class="info-field"><span class="lbl">PROGRESS</span><span class="val" style="color:var(--accent)">78.4%</span></div>
+        <div class="info-field"><span class="lbl">BATTERY</span><span class="val">82%</span></div>
+        <div class="info-field"><span class="lbl">LAST SEEN</span><span class="val">2m ago</span></div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:8px">
+        <div class="info-field"><span class="lbl">ETA — NEXT: MILE 25 AID</span><span class="val" style="color:var(--accent)">10:14 AM <span style="color:var(--text3);font-size:11px">(in 32m)</span></span></div>
+        <div class="info-field"><span class="lbl">FINISH ETA</span><span class="val" style="color:var(--accent)">11:52 AM <span style="color:var(--text3);font-size:11px">(in 2h 10m)</span></span></div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:8px">
+        <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">EVENT LOG</div>
+        <div class="log-entry"><span class="log-time">6:00 AM</span><span class="log-ok">START @ Start/Finish</span></div>
+        <div class="log-entry"><span class="log-time">7:44 AM</span><span>DEPART @ Mile 10 Aid</span></div>
+        <div class="log-entry"><span class="log-time">9:12 AM</span><span>DEPART @ Mile 20 Aid</span></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:auto;padding-top:8px;border-top:1px solid var(--border)">
+        <button class="btn" style="flex:1">MARK DNF</button>
+        <button class="btn primary" style="flex:1;color:#000">MESSAGE</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
