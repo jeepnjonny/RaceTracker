@@ -186,7 +186,7 @@ async function setupWeatherLayers(key) {
   activeWeatherOverlays.clear();
 
   const overlays = {};
-  if (owmKey) {
+  if (owmKey && race?.weather_enabled) {
     const owm = (layer, opacity) => L.tileLayer(
       `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`,
       { opacity: opacity || 0.55, attribution: '© OpenWeatherMap', maxZoom: 16, zIndex: 200 }
