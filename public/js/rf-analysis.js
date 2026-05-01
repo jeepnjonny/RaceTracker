@@ -3,36 +3,39 @@ const RF = (() => {
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let leafletMap = null;
-let heatLayer  = null;
-let routeLayer = null;
-let stationLayer = null;
+let heatLayer       = null;
+let routeLayer      = null;
+let stationLayer    = null;
+let coverageLayers  = {};   // src → L.polygon
 
 let races        = [];
 let currentRaceId = null;
-let allPositions  = [];   // raw from API [{lat,lon,snr,rssi,rf_source,timestamp,node_id}]
+let allPositions  = [];   // raw from API [{node_id,lat,lon,snr,rssi,rf_source,timestamp}]
 let nodeSummary   = [];   // from /nodes endpoint
-let summary       = {};   // per-source stats
-let stationData   = [];   // station records for bounds calc
-let routePoints   = [];   // [[lat,lon], ...] from track parse
+let summary       = {};   // per-source stats (unfiltered)
+let stationData   = [];
+let routePoints   = [];
 
-let activeSources = new Set();  // which rf_source values are checked
-let metric = 'density';         // 'density' | 'snr' | 'rssi'
-let heatRadius  = 20;
-let heatBlur    = 12;
-let heatOpacity = 0.70;
-let rightTab    = 'stats';
+let activeSources   = new Set();
+let metric          = 'density';   // 'density' | 'snr' | 'rssi'
+let heatRadius      = 20;
+let heatBlur        = 12;
+let heatOpacity     = 0.70;
+let rightTab        = 'stats';
+let timeWindowHours = 0;           // 0 = all data
+let showCoverage    = false;
 
-// Source metadata: color, display label, frequency string
+// Source metadata
 const SOURCE_META = {
-  meshtastic: { color: '#58a6ff', label: 'Meshtastic',  freq: '915 MHz LoRa' },
-  aprs:       { color: '#3fb950', label: 'APRS',         freq: '144.390 MHz' },
-  lora_aprs:  { color: '#d2a679', label: 'LoRa APRS',    freq: '915 MHz LoRa' },
+  meshtastic: { color: '#58a6ff', label: 'Meshtastic', freq: '915 MHz LoRa' },
+  aprs:       { color: '#3fb950', label: 'APRS',        freq: '144.390 MHz'  },
+  lora_aprs:  { color: '#d2a679', label: 'LoRa APRS',   freq: '915 MHz LoRa' },
 };
 function srcMeta(src) {
   return SOURCE_META[src] || { color: '#8b949e', label: src, freq: '' };
 }
 
-// Signal quality gradient (weak → strong): red → yellow → green → blue
+// Signal quality gradient: weak (red) → strong (blue) — industry standard
 const SIGNAL_GRADIENT = { 0.0: '#f85149', 0.35: '#ffa657', 0.55: '#fafa00', 0.75: '#3fb950', 1.0: '#58a6ff' };
 
 // ── Init ───────────────────────────────────────────────────────────────────────
@@ -48,24 +51,17 @@ async function init() {
 
   const sel = document.getElementById('race-sel');
   sel.innerHTML = races.map(r =>
-    `<option value="${r.id}">${r.name} (${r.date})${r.status==='active'?' ★':''}</option>`
+    `<option value="${r.id}">${r.name} (${r.date})${r.status === 'active' ? ' ★' : ''}</option>`
   ).join('');
 
-  // Honour ?race=ID from admin page, else default to active race
-  const params = new URLSearchParams(window.location.search);
+  // Honour ?race=ID from admin page, else active race
+  const params  = new URLSearchParams(window.location.search);
   const urlRace = params.get('race') ? parseInt(params.get('race')) : null;
   const active  = races.find(r => r.status === 'active');
-  const target  = urlRace
-    ? races.find(r => r.id === urlRace)
-    : active;
+  const target  = urlRace ? races.find(r => r.id === urlRace) : active;
 
-  if (target) {
-    sel.value = target.id;
-    await selectRace(target.id);
-  } else if (races.length) {
-    sel.value = races[0].id;
-    await selectRace(races[0].id);
-  }
+  if (target)        { sel.value = target.id;  await selectRace(target.id);  }
+  else if (races.length) { sel.value = races[0].id; await selectRace(races[0].id); }
 }
 
 // ── Map ────────────────────────────────────────────────────────────────────────
@@ -83,7 +79,6 @@ async function selectRace(raceId) {
   currentRaceId = parseInt(raceId);
   showLoading(true);
 
-  // Load positions + nodes in parallel, plus course/stations
   const [rfRes, nodeRes, stnRes, trackRes] = await Promise.all([
     RT.get(`/api/races/${raceId}/rf-analysis`),
     RT.get(`/api/races/${raceId}/rf-analysis/nodes`),
@@ -92,7 +87,6 @@ async function selectRace(raceId) {
   ]);
 
   showLoading(false);
-
   if (!rfRes.ok) { RT.toast('Failed to load RF data', 'warn'); return; }
 
   allPositions = rfRes.data.positions || [];
@@ -102,7 +96,7 @@ async function selectRace(raceId) {
   routePoints  = (trackRes.ok && trackRes.data?.trackPoints?.length)
     ? trackRes.data.trackPoints.map(([lat, lon]) => [lat, lon]) : [];
 
-  // Build active sources from what's in the data
+  // Build active sources from data
   const foundSources = new Set(allPositions.map(p => p.rf_source || 'meshtastic'));
   activeSources = new Set(foundSources);
 
@@ -111,6 +105,8 @@ async function selectRace(raceId) {
   renderNodeList();
   renderRawTable();
   renderHeatmap();
+  renderCoveragePolygons();
+  updateTimeWindowInfo();
 
   // Route overlay
   if (routeLayer) { leafletMap.removeLayer(routeLayer); routeLayer = null; }
@@ -124,8 +120,8 @@ async function selectRace(raceId) {
     stationLayer = L.layerGroup().addTo(leafletMap);
     for (const s of stationData) {
       if (!s.lat || !s.lon) continue;
-      const color = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' :
-                    s.type === 'start_finish' ? '#a371f7' : s.type === 'turnaround' ? '#58a6ff' : '#d2a679';
+      const color  = s.type === 'start' ? '#3fb950' : s.type === 'finish' ? '#f78166' :
+                     s.type === 'start_finish' ? '#a371f7' : s.type === 'turnaround' ? '#58a6ff' : '#d2a679';
       const letter = s.type === 'start' ? 'S' : s.type === 'finish' ? 'F' :
                      s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' : s.name[0]?.toUpperCase() || 'A';
       L.marker([s.lat, s.lon], {
@@ -140,25 +136,45 @@ async function selectRace(raceId) {
   fitMapToCourse();
 }
 
-// Fit map to the best available bounds: route > stations > positions
+// Fit to route > stations > positions
 function fitMapToCourse() {
   const latLngs = [];
-
   if (routePoints.length) {
     latLngs.push(...routePoints);
   } else {
-    // Fall back: stations then positions
-    for (const s of stationData) {
-      if (s.lat && s.lon) latLngs.push([s.lat, s.lon]);
-    }
-    for (const p of allPositions) {
-      if (p.lat && p.lon) latLngs.push([p.lat, p.lon]);
-    }
+    for (const s of stationData) { if (s.lat && s.lon) latLngs.push([s.lat, s.lon]); }
+    const visible = filteredPositions();
+    for (const p of visible)    { if (p.lat && p.lon) latLngs.push([p.lat, p.lon]); }
   }
+  if (latLngs.length) leafletMap.fitBounds(L.latLngBounds(latLngs).pad(0.08));
+}
 
-  if (latLngs.length) {
-    leafletMap.fitBounds(L.latLngBounds(latLngs).pad(0.08));
+// ── Time window ────────────────────────────────────────────────────────────────
+function setTimeWindow(val) {
+  timeWindowHours = parseInt(val) || 0;
+  renderHeatmap();
+  renderCoveragePolygons();
+  renderRawTable();
+  renderStats();
+  updateTimeWindowInfo();
+}
+
+function updateTimeWindowInfo() {
+  const el = document.getElementById('time-window-info');
+  if (!el) return;
+  const visible = filteredPositions();
+  if (!allPositions.length) { el.textContent = ''; return; }
+  el.textContent = `${visible.length.toLocaleString()} of ${allPositions.length.toLocaleString()} packets`;
+}
+
+// Returns positions filtered by active sources AND time window
+function filteredPositions() {
+  let pts = allPositions.filter(p => activeSources.has(p.rf_source || 'meshtastic'));
+  if (timeWindowHours > 0) {
+    const cutoff = Math.max(...allPositions.map(p => p.timestamp)) - timeWindowHours * 3600;
+    pts = pts.filter(p => p.timestamp >= cutoff);
   }
+  return pts;
 }
 
 // ── Source toggle list ─────────────────────────────────────────────────────────
@@ -179,7 +195,7 @@ function renderSourceList(foundSources) {
           <div style="font-size:14px">${m.label}</div>
           <div style="font-size:12px;color:var(--text3)">${m.freq}</div>
         </label>
-        <span class="src-count">${(s.count||0).toLocaleString()}</span>
+        <span class="src-count">${(s.count || 0).toLocaleString()}</span>
       </div>`;
   }).join('');
 }
@@ -187,65 +203,77 @@ function renderSourceList(foundSources) {
 // ── Summary stats ──────────────────────────────────────────────────────────────
 function renderStats() {
   const el = document.getElementById('stats-body');
+  const visible = filteredPositions();
+
   if (!Object.keys(summary).length) {
     el.innerHTML = '<span class="text-dim" style="font-size:13px">No data</span>';
     return;
   }
-  const total = Object.values(summary).reduce((a, s) => a + s.count, 0);
-  const nodes = Object.values(summary).reduce((a, s) => a + s.node_count, 0);
+
+  // Recompute totals over visible (time-filtered) positions
+  const totalVisible = visible.length;
+  const uniqueNodes  = new Set(visible.map(p => p.node_id)).size;
 
   let html = `
     <div class="ctrl-block">
       <div class="ctrl-title">Overall</div>
-      <div class="stat-row"><span>Total packets</span><span class="stat-val">${total.toLocaleString()}</span></div>
-      <div class="stat-row"><span>Unique nodes</span><span class="stat-val">${nodes}</span></div>
+      <div class="stat-row"><span>Packets (window)</span><span class="stat-val">${totalVisible.toLocaleString()}</span></div>
+      <div class="stat-row"><span>Unique nodes</span><span class="stat-val">${uniqueNodes}</span></div>
     </div>`;
 
-  for (const [src, s] of Object.entries(summary)) {
-    const m = srcMeta(src);
-    let timeStr = '';
-    if (s.first_ts && s.last_ts) {
-      const dur = s.last_ts - s.first_ts;
-      const h = Math.floor(dur / 3600), mn = Math.floor((dur % 3600) / 60);
-      timeStr = h ? `${h}h ${mn}m` : `${mn}m`;
-    }
-    // Signal quality badge
-    const snrColor  = snrQualityColor(s.avg_snr);
-    const rssiColor = rssiQualityColor(s.avg_rssi);
+  // Per-source breakdown — recompute over visible window
+  const srcGroups = {};
+  for (const p of visible) {
+    const s = p.rf_source || 'meshtastic';
+    if (!srcGroups[s]) srcGroups[s] = { count: 0, snrs: [], rssis: [], nodes: new Set(), first_ts: p.timestamp, last_ts: p.timestamp };
+    srcGroups[s].count++;
+    srcGroups[s].nodes.add(p.node_id);
+    if (p.snr  != null) srcGroups[s].snrs.push(p.snr);
+    if (p.rssi != null) srcGroups[s].rssis.push(p.rssi);
+    if (p.timestamp < srcGroups[s].first_ts) srcGroups[s].first_ts = p.timestamp;
+    if (p.timestamp > srcGroups[s].last_ts)  srcGroups[s].last_ts  = p.timestamp;
+  }
+
+  for (const [src, sg] of Object.entries(srcGroups)) {
+    const m     = srcMeta(src);
+    const avgSnr  = sg.snrs.length  ? sg.snrs.reduce((a, b) => a + b, 0)  / sg.snrs.length  : null;
+    const avgRssi = sg.rssis.length ? sg.rssis.reduce((a, b) => a + b, 0) / sg.rssis.length : null;
+    const dur     = sg.last_ts - sg.first_ts;
+    const h = Math.floor(dur / 3600), mn = Math.floor((dur % 3600) / 60);
+    const timeStr = dur > 60 ? (h ? `${h}h ${mn}m` : `${mn}m`) : '';
+    const snrColor  = snrQualityColor(avgSnr);
     html += `
       <div class="ctrl-block">
         <div class="ctrl-title" style="color:${m.color}">${m.label}</div>
-        <div class="stat-row"><span>Packets</span><span class="stat-val">${s.count.toLocaleString()}</span></div>
-        <div class="stat-row"><span>Nodes</span><span class="stat-val">${s.node_count}</span></div>
-        ${s.avg_snr  != null ? `<div class="stat-row"><span>Avg SNR</span><span class="stat-val" style="color:${snrColor}">${s.avg_snr} dB</span></div>` : ''}
-        ${s.avg_rssi != null ? `<div class="stat-row"><span>Avg RSSI</span><span class="stat-val" style="color:${rssiColor}">${s.avg_rssi} dBm</span></div>` : ''}
+        <div class="stat-row"><span>Packets</span><span class="stat-val">${sg.count.toLocaleString()}</span></div>
+        <div class="stat-row"><span>Nodes</span><span class="stat-val">${sg.nodes.size}</span></div>
+        ${avgSnr  != null ? `<div class="stat-row"><span>Avg SNR</span><span class="stat-val" style="color:${snrColor}">${avgSnr.toFixed(1)} dB</span></div>` : ''}
+        ${avgRssi != null ? `<div class="stat-row"><span>Avg RSSI</span><span class="stat-val" style="color:${rssiQualityColor(avgRssi)}">${Math.round(avgRssi)} dBm</span></div>` : ''}
         ${timeStr ? `<div class="stat-row"><span>Duration</span><span class="stat-val">${timeStr}</span></div>` : ''}
-        ${s.avg_snr != null ? renderSignalBar(s.avg_snr, 'snr') : ''}
+        ${avgSnr != null ? renderSignalBar(avgSnr, 'snr') : ''}
       </div>`;
   }
   el.innerHTML = html;
 }
 
-// Color coding for signal quality display
+// Signal quality color helpers
 function snrQualityColor(snr) {
   if (snr == null) return 'var(--text3)';
-  if (snr >= 5)   return '#58a6ff'; // excellent
-  if (snr >= 0)   return '#3fb950'; // good
-  if (snr >= -10) return '#fafa00'; // fair
-  if (snr >= -15) return '#ffa657'; // poor
-  return '#f85149';                  // very poor
+  if (snr >= 5)   return '#58a6ff';
+  if (snr >= 0)   return '#3fb950';
+  if (snr >= -10) return '#fafa00';
+  if (snr >= -15) return '#ffa657';
+  return '#f85149';
 }
 function rssiQualityColor(rssi) {
   if (rssi == null) return 'var(--text3)';
-  if (rssi >= -80)  return '#58a6ff'; // excellent
-  if (rssi >= -100) return '#3fb950'; // good
-  if (rssi >= -115) return '#fafa00'; // fair
-  if (rssi >= -125) return '#ffa657'; // poor
-  return '#f85149';                    // very poor
+  if (rssi >= -80)  return '#58a6ff';
+  if (rssi >= -100) return '#3fb950';
+  if (rssi >= -115) return '#fafa00';
+  if (rssi >= -125) return '#ffa657';
+  return '#f85149';
 }
-
 function renderSignalBar(snr, type) {
-  // Normalize to 0..1 for the gradient bar width
   const norm = type === 'snr'
     ? Math.max(0, Math.min(1, (snr + 20) / 30))
     : Math.max(0, Math.min(1, (snr + 140) / 80));
@@ -276,42 +304,38 @@ function renderNodeList() {
     const snrStr  = n.avg_snr  != null ? `SNR ${Math.round(n.avg_snr)} dB`   : '';
     const rssiStr = n.avg_rssi != null ? `RSSI ${Math.round(n.avg_rssi)} dBm` : '';
     const sigStr  = [snrStr, rssiStr].filter(Boolean).join('  ');
-    const snrColor = snrQualityColor(n.avg_snr);
     return `
       <div class="node-row" title="${n.node_id}">
         <span class="src-dot" style="background:${m.color}"></span>
         <span class="node-name">${displayName}</span>
         <span class="node-pkt">${n.packet_count.toLocaleString()}</span>
       </div>
-      ${sigStr ? `<div style="font-size:11px;color:${snrColor};padding:0 4px 4px 22px">${sigStr}</div>` : ''}`;
+      ${sigStr ? `<div style="font-size:11px;color:${snrQualityColor(n.avg_snr)};padding:0 4px 4px 22px">${sigStr}</div>` : ''}`;
   }).join('');
 }
 
 // ── Raw data table ─────────────────────────────────────────────────────────────
 function renderRawTable() {
   const tbody = document.getElementById('raw-tbody');
-  if (!allPositions.length) {
+  const visible = filteredPositions();
+  if (!visible.length) {
     tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text3);padding:10px;text-align:center">No data</td></tr>';
     return;
   }
-
-  // Show up to 500 most recent, filtered by active sources
-  const filtered = [...allPositions]
-    .filter(p => activeSources.has(p.rf_source || 'meshtastic'))
-    .slice(-500)
-    .reverse();
-
-  tbody.innerHTML = filtered.map(p => {
+  const rows = [...visible].slice(-500).reverse();
+  tbody.innerHTML = rows.map(p => {
     const src  = p.rf_source || 'meshtastic';
     const m    = srcMeta(src);
-    const time = p.timestamp ? new Date(p.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    const time = p.timestamp
+      ? new Date(p.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '';
     const snrC = p.snr  != null ? `style="color:${snrQualityColor(p.snr)}"` : '';
     const rsiC = p.rssi != null ? `style="color:${rssiQualityColor(p.rssi)}"` : '';
     const node = p.node_id ? p.node_id.slice(-6) : '—';
     return `<tr>
       <td>${time}</td>
-      <td><span style="color:${m.color}">${m.label.slice(0,4)}</span></td>
-      <td title="${p.node_id||''}">${node}</td>
+      <td><span style="color:${m.color}">${m.label.slice(0, 4)}</span></td>
+      <td title="${p.node_id || ''}">${node}</td>
       <td>${p.lat?.toFixed(5) ?? '—'}</td>
       <td>${p.lon?.toFixed(5) ?? '—'}</td>
       <td ${snrC}>${p.snr  != null ? p.snr  + ' dB'  : '—'}</td>
@@ -320,22 +344,93 @@ function renderRawTable() {
   }).join('');
 }
 
+// ── Coverage polygon (convex hull per source) ──────────────────────────────────
+// Approach adapted from trackdirect: convex hull of received positions, drawn as
+// a filled polygon to show the geographic extent of RF coverage per technology.
+function toggleCoverage(checked) {
+  showCoverage = checked;
+  renderCoveragePolygons();
+}
+
+function renderCoveragePolygons() {
+  // Remove existing coverage layers
+  for (const lyr of Object.values(coverageLayers)) {
+    if (lyr) leafletMap.removeLayer(lyr);
+  }
+  coverageLayers = {};
+  if (!showCoverage) return;
+
+  const visible = filteredPositions();
+  if (!visible.length) return;
+
+  // Group by source
+  const bySource = {};
+  for (const p of visible) {
+    const src = p.rf_source || 'meshtastic';
+    if (!bySource[src]) bySource[src] = [];
+    bySource[src].push([p.lat, p.lon]);
+  }
+
+  for (const [src, pts] of Object.entries(bySource)) {
+    if (!activeSources.has(src)) continue;
+    const hull = convexHull(pts);
+    if (hull.length < 3) continue;
+    const m = srcMeta(src);
+    coverageLayers[src] = L.polygon(hull, {
+      color:       m.color,
+      weight:      1.5,
+      opacity:     0.7,
+      fillColor:   m.color,
+      fillOpacity: 0.10,
+      dashArray:   '5,4',
+    }).bindTooltip(`${m.label} coverage area — ${pts.length.toLocaleString()} packets`).addTo(leafletMap);
+  }
+}
+
+// Gift-wrapping (Jarvis march) convex hull — O(nh), fine for ≤10k points
+function convexHull(points) {
+  const n = points.length;
+  if (n < 3) return points;
+
+  // Find leftmost point (min longitude)
+  let l = 0;
+  for (let i = 1; i < n; i++) {
+    if (points[i][1] < points[l][1]) l = i;
+  }
+
+  const hull = [];
+  let p = l;
+  do {
+    hull.push(points[p]);
+    let q = (p + 1) % n;
+    for (let i = 0; i < n; i++) {
+      if (ccw(points[p], points[i], points[q]) > 0) q = i;
+    }
+    p = q;
+    if (hull.length > n) break; // safety
+  } while (p !== l);
+
+  return hull;
+}
+
+// Cross product z-component — positive = counter-clockwise
+function ccw(a, b, c) {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
 // ── Heatmap rendering ──────────────────────────────────────────────────────────
 function buildHeatPoints() {
   const pts = [];
-  for (const p of allPositions) {
-    if (!activeSources.has(p.rf_source || 'meshtastic')) continue;
+  for (const p of filteredPositions()) {
     let intensity;
     if (metric === 'snr') {
       if (p.snr == null) continue;
-      // -20..+10 dB → 0..1  (higher = better signal = more intense)
       intensity = Math.max(0, Math.min(1, (p.snr + 20) / 30));
     } else if (metric === 'rssi') {
       if (p.rssi == null) continue;
-      // -140..-60 dBm → 0..1
       intensity = Math.max(0, Math.min(1, (p.rssi + 140) / 80));
     } else {
-      intensity = 1; // density: uniform weight, let kernel do the work
+      intensity = 1;
     }
     pts.push([p.lat, p.lon, intensity]);
   }
@@ -346,21 +441,17 @@ function renderHeatmap() {
   if (heatLayer) { leafletMap.removeLayer(heatLayer); heatLayer = null; }
   const pts = buildHeatPoints();
 
-  // Update signal legend visibility
+  // Signal legend
   const legend = document.getElementById('signal-legend');
   if (metric !== 'density' && pts.length) {
     legend.classList.add('visible');
-    const title = document.getElementById('legend-title');
-    const minLbl = document.getElementById('legend-min');
-    const maxLbl = document.getElementById('legend-max');
+    document.getElementById('legend-title').textContent = metric.toUpperCase();
     if (metric === 'snr') {
-      title.textContent = 'SNR';
-      minLbl.textContent = '≤ −20 dB (poor)';
-      maxLbl.textContent = '+10 dB (excellent)';
+      document.getElementById('legend-min').textContent = '≤ −20 dB (poor)';
+      document.getElementById('legend-max').textContent = '+10 dB (excellent)';
     } else {
-      title.textContent = 'RSSI';
-      minLbl.textContent = '≤ −140 dBm';
-      maxLbl.textContent = '−60 dBm';
+      document.getElementById('legend-min').textContent = '≤ −140 dBm';
+      document.getElementById('legend-max').textContent = '−60 dBm';
     }
   } else {
     legend.classList.remove('visible');
@@ -376,7 +467,6 @@ function renderHeatmap() {
     gradient:   metric !== 'density' ? SIGNAL_GRADIENT : undefined,
   }).addTo(leafletMap);
 
-  // Apply opacity via the canvas element
   setTimeout(() => {
     const canvas = document.querySelector('.leaflet-heatmap-layer');
     if (canvas) canvas.style.opacity = heatOpacity;
@@ -388,7 +478,8 @@ function switchTab(id) {
   rightTab = id;
   ['stats', 'nodes', 'raw'].forEach(t => {
     document.getElementById(`rp-tab-${t}`)?.classList.toggle('active', t === id);
-    document.getElementById(`rp-${t}`)?.style.setProperty('display', t === id ? '' : 'none');
+    const el = document.getElementById(`rp-${t}`);
+    if (el) el.style.display = t === id ? '' : 'none';
   });
   if (id === 'raw') renderRawTable();
 }
@@ -396,14 +487,17 @@ function switchTab(id) {
 // ── Controls ───────────────────────────────────────────────────────────────────
 function toggleSource(src, checked) {
   if (checked) activeSources.add(src);
-  else activeSources.delete(src);
+  else         activeSources.delete(src);
   renderHeatmap();
+  renderCoveragePolygons();
+  updateTimeWindowInfo();
   if (rightTab === 'raw') renderRawTable();
+  if (rightTab === 'stats') renderStats();
 }
 
 function setMetric(m) {
   metric = m;
-  ['density','snr','rssi'].forEach(id => {
+  ['density', 'snr', 'rssi'].forEach(id => {
     document.getElementById('btn-' + id)?.classList.toggle('active', id === m);
   });
   renderHeatmap();
@@ -435,7 +529,6 @@ async function clearData() {
   const res = await RT.del(`/api/races/${currentRaceId}/rf-analysis`);
   if (!res.ok) { RT.toast('Failed to clear data', 'warn'); return; }
   RT.toast(`Cleared ${res.data?.deleted ?? 0} records`, 'ok');
-  // Reload
   await selectRace(currentRaceId);
 }
 
@@ -445,5 +538,6 @@ function showLoading(on) {
 
 init();
 
-return { selectRace, toggleSource, setMetric, setOpacity, setRadius, setBlur, clearData, switchTab };
+return { selectRace, toggleSource, setMetric, setOpacity, setRadius, setBlur,
+         clearData, switchTab, setTimeWindow, toggleCoverage };
 })();
