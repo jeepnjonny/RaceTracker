@@ -34,10 +34,6 @@ async function init() {
   const user = await RT.requireLogin('admin');
   if (!user) return;
 
-  RT.applyTheme(localStorage.getItem('rt-theme') || 'dark');
-  const themeSel = document.getElementById('theme-sel');
-  if (themeSel) themeSel.value = localStorage.getItem('rt-theme') || 'dark';
-
   initMap();
 
   const res = await RT.get('/api/races');

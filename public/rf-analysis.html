@@ -55,16 +55,10 @@
 </head>
 <body>
 <div id="topbar">
-  <h1>&#9654; RF Analysis</h1>
+  <h1>&#9654; RaceTracker</h1>
+  <div class="pill pill-idle">RF ANALYSIS</div>
   <div id="topbar-right">
-    <select id="theme-sel" onchange="RT.applyTheme(this.value)" style="font-size:14px;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font)">
-      <option value="dark">Dark</option><option value="amber">Amber</option>
-      <option value="eclipse">Eclipse</option><option value="high-vis-dark">High-Vis Dark</option>
-      <option value="high-vis-day">High-Vis Day</option>
-      <option value="midnight-purple">Midnight Purple</option>
-      <option value="terminal-green">Terminal Green</option>
-    </select>
-    <button onclick="window.location.href=RT.BASE+'admin.html'">&#8592; ADMIN</button>
+    <button onclick="window.location.href=RT.BASE+'admin.html'">ADMIN</button>
     <button onclick="RT.logout()">LOGOUT</button>
   </div>
 </div>
