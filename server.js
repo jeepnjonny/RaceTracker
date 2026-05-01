@@ -78,6 +78,7 @@ raceRouter.use('/classes',      require('./src/routes/classes'));
 raceRouter.use('/events',       require('./src/routes/events'));
 raceRouter.use('/messages',     require('./src/routes/messages'));
 raceRouter.use('/weather',      require('./src/routes/weather'));
+raceRouter.use('/rf-analysis',  require('./src/routes/rf-analysis'));
 app.use('/api/races/:raceId', raceRouter);
 
 // ── MQTT test ─────────────────────────────────────────────────────────────────

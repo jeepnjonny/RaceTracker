@@ -244,6 +244,9 @@ try { db.prepare('ALTER TABLE races ADD COLUMN start_window_open INTEGER DEFAULT
 try { db.prepare('ALTER TABLE races ADD COLUMN start_window_ts INTEGER').run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN start_clearance INTEGER DEFAULT 400').run(); } catch {}
 try { db.prepare('ALTER TABLE heats ADD COLUMN start_time INTEGER').run(); } catch {}
+try { db.prepare("ALTER TABLE tracker_positions ADD COLUMN rf_source TEXT DEFAULT 'meshtastic'").run(); } catch {}
+try { db.prepare('ALTER TABLE tracker_registry ADD COLUMN rf_tech TEXT').run(); } catch {}
+try { db.prepare("ALTER TABLE races ADD COLUMN mqtt_rf_tech TEXT NOT NULL DEFAULT 'meshtastic'").run(); } catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

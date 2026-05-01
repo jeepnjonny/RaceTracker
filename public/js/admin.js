@@ -247,8 +247,9 @@ async function openRaceModal(id) {
   document.getElementById('rm-leaderboard').checked  = !!(race?.leaderboard_enabled ?? 1);
   document.getElementById('rm-weather').checked      = !!(race?.weather_enabled);
   document.getElementById('rm-race-format').value    = race?.race_format || 'point_to_point';
-  document.getElementById('rm-start-time').value     = unixToTimeStr(race?.start_time);
-  document.getElementById('rm-start-clearance').value = race?.start_clearance ?? 400;
+  document.getElementById('rm-start-time').value      = unixToTimeStr(race?.start_time);
+  document.getElementById('rm-start-clearance').value  = race?.start_clearance ?? 400;
+  document.getElementById('rm-mqtt-rf-tech').value     = race?.mqtt_rf_tech || 'meshtastic';
   // Populate course dropdown
   const cr = await RT.get('/api/courses');
   const cSel = document.getElementById('rm-course-id');
@@ -283,6 +284,7 @@ async function saveRace() {
     race_format:         document.getElementById('rm-race-format').value,
     start_time:          parseTimeToUnix(document.getElementById('rm-start-time').value, document.getElementById('rm-date').value) ?? null,
     start_clearance:     parseInt(document.getElementById('rm-start-clearance').value) || 400,
+    mqtt_rf_tech:        document.getElementById('rm-mqtt-rf-tech').value,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId

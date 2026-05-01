@@ -13,7 +13,7 @@ const RACE_FIELDS = [
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
   'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id','race_format',
   'feat_missing','feat_auto_log','feat_auto_start','feat_off_course','feat_stopped','speed_units',
-  'start_time','start_clearance',
+  'start_time','start_clearance','mqtt_rf_tech',
 ];
 
 router.get('/', requireAuth, (req, res) => {

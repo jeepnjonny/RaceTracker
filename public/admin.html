@@ -63,6 +63,7 @@
 
   <div id="topbar-right">
     <button onclick="window.location.href=RT.BASE+'operator.html'">OPERATOR VIEW</button>
+    <button onclick="window.location.href=RT.BASE+'rf-analysis.html'" style="color:var(--accent4);border-color:var(--accent4)">RF ANALYSIS</button>
     <button onclick="RT.logout()">LOGOUT</button>
   </div>
 </div>
@@ -99,6 +100,13 @@
         <select id="rm-race-format">
           <option value="point_to_point">Point-to-Point</option>
           <option value="out_and_back">Out &amp; Back</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>MQTT RF TECH <span class="text-dim">(for RF analysis)</span></label>
+        <select id="rm-mqtt-rf-tech">
+          <option value="meshtastic">Meshtastic (915 MHz LoRa)</option>
+          <option value="lora_aprs">LoRa APRS (915 MHz)</option>
         </select>
       </div>
     </div>

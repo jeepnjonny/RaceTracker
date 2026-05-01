@@ -62,7 +62,7 @@ function broadcast(type, data) {
 }
 
 // Persist position, update registry, check geofences & alerts
-function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi, battery, timestamp }) {
+function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi, battery, timestamp, rfSource }) {
   if (!nodeId || isNaN(lat) || isNaN(lon)) return;
 
   // Update registry — battery_level uses COALESCE so a position without battery data
@@ -81,11 +81,12 @@ function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi,
   // Store position history
   const activeRace = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
   if (activeRace) {
+    const src = rfSource || activeRace.mqtt_rf_tech || 'meshtastic';
     db.prepare(`
-      INSERT INTO tracker_positions (race_id, node_id, lat, lon, altitude, speed, heading, battery, snr, rssi, timestamp)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      INSERT INTO tracker_positions (race_id, node_id, lat, lon, altitude, speed, heading, battery, snr, rssi, timestamp, rf_source)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(activeRace.id, nodeId, lat, lon, altitude ?? null, speed ?? null, heading ?? null,
-           battery ?? null, snr ?? null, rssi ?? null, timestamp);
+           battery ?? null, snr ?? null, rssi ?? null, timestamp, src);
 
     // Keep only last 500 positions per node per race
     db.prepare(`

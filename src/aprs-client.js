@@ -130,6 +130,7 @@ function processLine(line) {
       snr: null,
       rssi: null,
       timestamp: ts,
+      rfSource: 'aprs',
     });
     if (voltage != null) {
       mqttClient.handleTelemetry({ nodeId: fromCall, battery: null, voltage, timestamp: ts });
