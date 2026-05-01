@@ -262,8 +262,8 @@ function renderLeaderboard() {
       <span style="color:${sc};font-weight:bold">${p.bib}</span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dot} ${p.name}</span>
       <span style="color:var(--accent)">${pct}</span>
-      <span style="color:var(--text2);font-size:11px">${p._pct && p.start_time ? fmtPace(p) : '--'}</span>
-      <span style="color:var(--text3);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lastAid}</span>
+      <span style="color:var(--text2);font-size:13px">${p._pct && p.start_time ? fmtPace(p) : '--'}</span>
+      <span style="color:var(--text3);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lastAid}</span>
     </div>`;
   }).join('');
 }

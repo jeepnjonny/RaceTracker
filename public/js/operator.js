@@ -265,7 +265,7 @@ function renderStationMarkers() {
                    s.type === 'start_finish' ? '⇌' : s.type === 'turnaround' ? 'T' :
                    s.type === 'netcontrol' ? 'N' : s.type === 'repeater' ? 'R' : s.name[0]?.toUpperCase() || 'A';
     const icon = L.divIcon({
-      html: `<div style="width:22px;height:22px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#000;font-family:'Courier New'">${letter}</div>`,
+      html: `<div style="width:22px;height:22px;border-radius:50%;background:${color};border:2px solid #fff4;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;color:#000;font-family:'Courier New'">${letter}</div>`,
       className: '', iconAnchor: [11, 11],
     });
     const marker = L.marker([s.lat, s.lon], { icon })
@@ -358,7 +358,7 @@ function renderLeaderboard() {
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dot} ${p.name}</span>
       <span style="color:var(--accent)">${pct}</span>
       <span style="color:var(--text2)">${pace}</span>
-      <span style="color:var(--text3);font-size:11px">${bat}</span>
+      <span style="color:var(--text3);font-size:13px">${bat}</span>
     </div>`;
   }).join('');
 
@@ -552,9 +552,9 @@ async function showParticipantInfo(id) {
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       ${heat ? RT.SHAPES[heat.shape]?.(heat.color, 20) || '' : ''}
-      <span style="font-size:17px;font-weight:bold">#${p.bib} ${p.name}</span>
+      <span style="font-size:20px;font-weight:bold">#${p.bib} ${p.name}</span>
       <span class="badge" style="background:${sc}22;color:${sc}">${p.status?.toUpperCase()}</span>
-      <button style="margin-left:auto;font-size:11px;padding:2px 8px" onclick="OP.openEditModal(${id})">EDIT</button>
+      <button style="margin-left:auto;font-size:13px;padding:2px 8px" onclick="OP.openEditModal(${id})">EDIT</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div class="info-field"><span class="lbl">HEAT</span><span class="val">${heat?.name||'—'}</span></div>
@@ -564,7 +564,7 @@ async function showParticipantInfo(id) {
       <div class="info-field"><span class="lbl">PROGRESS</span><span class="val text-accent">${pct != null ? pct.toFixed(1)+'%' : '—'}</span></div>
       <div class="info-field"><span class="lbl">BATTERY</span><span class="val">${reg?.battery_level != null ? reg.battery_level+'%' : '—'}</span></div>
       <div class="info-field"><span class="lbl">LAST SEEN</span><span class="val" id="info-last-seen" data-ts="${reg?.last_seen || 0}">${RT.timeAgo(reg?.last_seen)}</span></div>
-      <div class="info-field"><span class="lbl">TRACKER</span><span class="val text-dim" style="font-size:11px">${p.tracker_id||'—'}</span></div>
+      <div class="info-field"><span class="lbl">TRACKER</span><span class="val text-dim" style="font-size:13px">${p.tracker_id||'—'}</span></div>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:8px">
       <div class="info-field"><span class="lbl">PHONE</span><span class="val">${p.phone||'—'}</span></div>
@@ -578,21 +578,21 @@ async function showParticipantInfo(id) {
       const nextHtml = eta.nextStation
         ? `<div class="info-field" style="margin-bottom:4px">
             <span class="lbl">NEXT: ${eta.nextStation.name.toUpperCase()}</span>
-            <span class="val text-accent">${RT.fmtTime(eta.etaNext, fmt24)} <span style="color:var(--text3);font-size:11px">(in ${fmtEtaDelta(eta.etaNext - now)}, ${fmtEtaDist(eta.distToNext)})</span></span>
+            <span class="val text-accent">${RT.fmtTime(eta.etaNext, fmt24)} <span style="color:var(--text3);font-size:13px">(in ${fmtEtaDelta(eta.etaNext - now)}, ${fmtEtaDist(eta.distToNext)})</span></span>
            </div>`
         : '';
       return `<div style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:8px">
-        <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">ETA</div>
+        <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">ETA</div>
         ${nextHtml}
         <div class="info-field">
           <span class="lbl">FINISH</span>
-          <span class="val text-accent">${RT.fmtTime(eta.etaFinish, fmt24)} <span style="color:var(--text3);font-size:11px">(in ${fmtEtaDelta(eta.secsToFinish)})</span></span>
+          <span class="val text-accent">${RT.fmtTime(eta.etaFinish, fmt24)} <span style="color:var(--text3);font-size:13px">(in ${fmtEtaDelta(eta.secsToFinish)})</span></span>
         </div>
       </div>`;
     })()}
     <div style="border-top:1px solid var(--border);padding-top:8px">
-      <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">EVENT LOG</div>
-      ${(p.events||[]).length === 0 ? '<div class="text-dim" style="font-size:12px">No events yet.</div>' :
+      <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">EVENT LOG</div>
+      ${(p.events||[]).length === 0 ? '<div class="text-dim" style="font-size:14px">No events yet.</div>' :
         p.events.map(e => `
           <div class="log-entry">
             <span class="log-time">${RT.fmtTime(e.timestamp, fmt24)}</span>
@@ -631,19 +631,19 @@ function showStationInfo(id) {
     const el = document.getElementById('info-panel');
     el.innerHTML = `
       <div style="margin-bottom:10px">
-        <span style="font-size:15px;font-weight:bold;color:var(--accent4)">${s.name}</span>
+        <span style="font-size:18px;font-weight:bold;color:var(--accent4)">${s.name}</span>
         <span class="badge" style="color:var(--accent4);margin-left:6px">${s.type.toUpperCase()}</span>
-        ${s.cutoff_time ? `<span class="text-dim" style="font-size:12px;margin-left:6px">Cutoff: ${s.cutoff_time}</span>` : ''}
+        ${s.cutoff_time ? `<span class="text-dim" style="font-size:14px;margin-left:6px">Cutoff: ${s.cutoff_time}</span>` : ''}
       </div>
-      <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">PERSONNEL (${stPersonnel.length})</div>
+      <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">PERSONNEL (${stPersonnel.length})</div>
       ${stPersonnel.length ? stPersonnel.map(p =>
         `<div class="list-row" style="cursor:default">
           <span>${p.name}</span>
-          ${p.tracker_id ? `<span class="text-dim" style="font-size:11px">${p.tracker_id}</span>` : ''}
-          ${p.phone ? `<span class="text-dim" style="font-size:11px">${p.phone}</span>` : ''}
-        </div>`).join('') : '<div class="text-dim" style="font-size:12px;margin-bottom:8px">None assigned.</div>'}
-      <div style="font-size:11px;letter-spacing:2px;color:var(--text3);margin:8px 0 6px">ARRIVALS / DEPARTURES</div>
-      ${events.length === 0 ? '<div class="text-dim" style="font-size:12px">No events yet.</div>' :
+          ${p.tracker_id ? `<span class="text-dim" style="font-size:13px">${p.tracker_id}</span>` : ''}
+          ${p.phone ? `<span class="text-dim" style="font-size:13px">${p.phone}</span>` : ''}
+        </div>`).join('') : '<div class="text-dim" style="font-size:14px;margin-bottom:8px">None assigned.</div>'}
+      <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin:8px 0 6px">ARRIVALS / DEPARTURES</div>
+      ${events.length === 0 ? '<div class="text-dim" style="font-size:14px">No events yet.</div>' :
         events.map(e => `<div class="log-entry">
           <span class="log-time">${RT.fmtTime(e.timestamp, fmt24)}</span>
           <span class="log-msg ${e.event_type==='aid_arrive'||e.event_type==='start'?'log-info':''}">
@@ -976,17 +976,17 @@ function findParticipantByNode(nodeId) {
 function renderAlertsList() {
   const el = document.getElementById('alerts-list');
   if (!el) return;
-  if (!alerts.length) { el.innerHTML = '<div class="text-dim" style="font-size:13px;padding:6px">No active alerts.</div>'; return; }
+  if (!alerts.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No active alerts.</div>'; return; }
   el.innerHTML = alerts.slice().reverse().map(a =>
     `<div class="alert-badge">
-      <span style="font-size:20px">⚠</span>
+      <span style="font-size:24px">⚠</span>
       <div>
         <div style="font-weight:bold">${a.type?.replace('_',' ').toUpperCase()}</div>
-        <div class="text-dim" style="font-size:11px">#${a.bib} ${a.name} · ${RT.fmtTime(a.timestamp, fmt24)}</div>
-        ${a.distanceFromRoute ? `<div style="font-size:11px">${a.distanceFromRoute}m off course</div>` : ''}
-        ${a.battery != null ? `<div style="font-size:11px">${a.battery}% battery remaining</div>` : ''}
+        <div class="text-dim" style="font-size:13px">#${a.bib} ${a.name} · ${RT.fmtTime(a.timestamp, fmt24)}</div>
+        ${a.distanceFromRoute ? `<div style="font-size:13px">${a.distanceFromRoute}m off course</div>` : ''}
+        ${a.battery != null ? `<div style="font-size:13px">${a.battery}% battery remaining</div>` : ''}
       </div>
-      <button style="margin-left:auto;font-size:11px;padding:2px 6px" onclick="OP.dismissAlert(${a.id})">✕</button>
+      <button style="margin-left:auto;font-size:13px;padding:2px 6px" onclick="OP.dismissAlert(${a.id})">✕</button>
     </div>`
   ).join('');
 }
@@ -1035,8 +1035,8 @@ function renderMessages() {
   el.innerHTML = thread.map(m => {
     const cls = m.direction === 'out' ? 'msg-bubble-out' : 'msg-bubble-in';
     const from = m.direction === 'in' ? (m.from_name || m.from_node_id) : 'You';
-    return `<div class="${cls}" style="max-width:90%;font-size:12px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}</div>
+    return `<div class="${cls}" style="max-width:90%;font-size:14px">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}</div>
       <div>${m.text}</div>
     </div>`;
   }).join('');
@@ -1216,15 +1216,15 @@ function renderWeatherPanel() {
   const el = document.getElementById('weather-panel');
   if (!el) return;
   if (!race?.weather_enabled) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:4px">Weather not enabled for this race.</div>';
+    el.innerHTML = '<div style="color:var(--text3);font-size:14px;padding:4px">Weather not enabled for this race.</div>';
     return;
   }
   if (wxError && !wxData) {
-    el.innerHTML = `<div style="color:var(--accent3);font-size:12px;padding:4px">${wxError}</div>`;
+    el.innerHTML = `<div style="color:var(--accent3);font-size:14px;padding:4px">${wxError}</div>`;
     return;
   }
   if (!wxData) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:12px">Loading…</div>';
+    el.innerHTML = '<div style="color:var(--text3);font-size:14px">Loading…</div>';
     return;
   }
   const w = wxData;
@@ -1241,11 +1241,11 @@ function renderWeatherPanel() {
     <div style="text-align:center;padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px">
       ${cond ? `<img src="https://openweathermap.org/img/wn/${cond.icon}@2x.png" width="60" height="60" style="margin-bottom:2px">` : ''}
       <div style="font-size:35px;font-weight:bold;color:var(--text);line-height:1">${w.temp != null ? Math.round(w.temp) + '°F' : '--'}</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:4px;text-transform:capitalize">${cond?.description || ''}</div>
-      ${w.feels_like != null ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">Feels like ${Math.round(w.feels_like)}°F</div>` : ''}
+      <div style="font-size:14px;color:var(--text2);margin-top:4px;text-transform:capitalize">${cond?.description || ''}</div>
+      ${w.feels_like != null ? `<div style="font-size:13px;color:var(--text3);margin-top:2px">Feels like ${Math.round(w.feels_like)}°F</div>` : ''}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
-      <div class="wx-stat"><div class="wx-lbl">WIND</div><div class="wx-val" style="font-size:13px">${wind}</div></div>
+      <div class="wx-stat"><div class="wx-lbl">WIND</div><div class="wx-val" style="font-size:16px">${wind}</div></div>
       <div class="wx-stat"><div class="wx-lbl">HUMIDITY</div><div class="wx-val">${w.humidity != null ? w.humidity + '%' : '--'}</div></div>
       <div class="wx-stat"><div class="wx-lbl">VISIBILITY</div><div class="wx-val">${visMi}</div></div>
       <div class="wx-stat"><div class="wx-lbl">CLOUDS</div><div class="wx-val">${w.clouds != null ? w.clouds + '%' : '--'}</div></div>
@@ -1271,11 +1271,11 @@ function renderForecastStrip() {
     return `
       <div style="display:grid;grid-template-columns:60px 32px 1fr;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border)">
         <div>
-          <div style="font-size:11px;font-weight:bold;color:var(--text)">${label}</div>
-          <div style="font-size:10px;color:var(--text3);text-transform:capitalize;margin-top:1px">${desc}</div>
+          <div style="font-size:13px;font-weight:bold;color:var(--text)">${label}</div>
+          <div style="font-size:12px;color:var(--text3);text-transform:capitalize;margin-top:1px">${desc}</div>
         </div>
         <img src="https://openweathermap.org/img/wn/${icon}.png" width="32" height="32">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:11px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:13px">
           <div><span style="color:var(--text3)">Temp </span><span style="color:var(--text)">${temp}</span></div>
           <div><span style="color:var(--text3)">Wind </span><span style="color:var(--text)">${wind}</span></div>
           <div><span style="color:var(--text3)">Pop </span><span style="color:#58a6ff">${pop}</span></div>
@@ -1285,7 +1285,7 @@ function renderForecastStrip() {
   }).join('');
   return `
     <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:6px">
-      <div style="font-size:10px;letter-spacing:1px;color:var(--text3);margin-bottom:4px">24-HOUR FORECAST</div>
+      <div style="font-size:12px;letter-spacing:1px;color:var(--text3);margin-bottom:4px">24-HOUR FORECAST</div>
       ${rows}
     </div>`;
 }
@@ -1297,9 +1297,9 @@ function renderAlertsSection() {
     const color = SEVERITY_COLOR[a.severity] || 'var(--accent3)';
     const exp   = a.expires ? new Date(a.expires).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
     return `<div style="border:1px solid ${color};border-radius:4px;padding:6px 8px;margin-bottom:6px;background:${color}18">
-      <div style="font-size:11px;font-weight:bold;color:${color};letter-spacing:.5px">${a.event}</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:2px">${a.headline || ''}</div>
-      ${exp ? `<div style="font-size:10px;color:var(--text3);margin-top:3px">Expires ${exp}</div>` : ''}
+      <div style="font-size:13px;font-weight:bold;color:${color};letter-spacing:.5px">${a.event}</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:2px">${a.headline || ''}</div>
+      ${exp ? `<div style="font-size:12px;color:var(--text3);margin-top:3px">Expires ${exp}</div>` : ''}
     </div>`;
   }).join('');
   return `<div style="margin-bottom:8px">${items}</div>`;

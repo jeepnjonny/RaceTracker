@@ -187,7 +187,7 @@ const RT = (() => {
     sel.className = 'rt-theme-sel';
     sel.title = 'Display theme';
     const inViewer = !!document.getElementById('viewer-topbar');
-    sel.style.cssText = 'font-size:11px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer;flex-shrink:0;width:auto' + (inViewer ? ';margin-left:auto' : '');
+    sel.style.cssText = 'font-size:13px;padding:3px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);cursor:pointer;flex-shrink:0;width:auto' + (inViewer ? ';margin-left:auto' : '');
     sel.innerHTML = THEMES.map(t => `<option value="${t.id}"${t.id === id ? ' selected' : ''}>${t.label}</option>`).join('');
     sel.onchange = () => applyTheme(sel.value);
     // Prepend into topbar-right; for viewer-topbar append before the toggle button
@@ -210,7 +210,7 @@ const RT = (() => {
     }
     const colors = { info: 'var(--accent)', ok: 'var(--accent2)', warn: 'var(--accent3)', alert: 'var(--accent3)' };
     const el = document.createElement('div');
-    el.style.cssText = `background:var(--surface);border:1px solid ${colors[type]||colors.info};color:${colors[type]||colors.info};padding:8px 14px;border-radius:6px;font-family:var(--font);font-size:13px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.4);`;
+    el.style.cssText = `background:var(--surface);border:1px solid ${colors[type]||colors.info};color:${colors[type]||colors.info};padding:8px 14px;border-radius:6px;font-family:var(--font);font-size:16px;max-width:320px;box-shadow:0 4px 12px rgba(0,0,0,.4);`;
     el.textContent = msg;
     toastContainer.appendChild(el);
     setTimeout(() => el.remove(), duration);

@@ -21,7 +21,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 18px;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -40,7 +40,7 @@ body {
   min-height: 42px;
 }
 #topbar h1 {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: bold;
   letter-spacing: 2px;
   color: var(--accent);
@@ -58,7 +58,7 @@ body {
 .pill {
   padding: 3px 10px;
   border-radius: 20px;
-  font-size: 13px;
+  font-size: 16px;
   border: 1px solid;
   white-space: nowrap;
 }
@@ -80,7 +80,7 @@ button, .btn {
   border-radius: 6px;
   cursor: pointer;
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 17px;
   transition: border-color .15s, color .15s;
   white-space: nowrap;
 }
@@ -96,7 +96,7 @@ button.success:hover { background: var(--accent2); color: #000; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── FORM ELEMENTS ───────────────────────────────────────────────────────── */
-label { font-size: 13px; color: var(--text2); letter-spacing: 0.5px; display: block; margin-bottom: 3px; }
+label { font-size: 16px; color: var(--text2); letter-spacing: 0.5px; display: block; margin-bottom: 3px; }
 input, select, textarea {
   width: 100%;
   background: var(--bg);
@@ -105,7 +105,7 @@ input, select, textarea {
   padding: 6px 8px;
   border-radius: 4px;
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 17px;
   outline: none;
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
@@ -119,7 +119,7 @@ textarea { resize: vertical; min-height: 60px; }
 .checkbox-row label { margin: 0; color: var(--text); }
 .slider-with-val { display: flex; gap: 8px; align-items: center; }
 .slider-with-val input[type=range] { flex: 1; }
-.slider-val { min-width: 40px; text-align: right; color: var(--accent); font-weight: bold; font-size: 14px; }
+.slider-val { min-width: 40px; text-align: right; color: var(--accent); font-weight: bold; font-size: 17px; }
 
 /* ── PANELS ──────────────────────────────────────────────────────────────── */
 #main { display: flex; flex: 1; overflow: hidden; }
@@ -145,7 +145,7 @@ textarea { resize: vertical; min-height: 60px; }
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text2);
-  font-size: 13px;
+  font-size: 16px;
   letter-spacing: 1px;
   border-radius: 0;
   cursor: pointer;
@@ -158,7 +158,7 @@ textarea { resize: vertical; min-height: 60px; }
 .tab-content.active { display: flex; }
 
 .section-header {
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: 2px;
   color: var(--text3);
   text-transform: uppercase;
@@ -180,7 +180,7 @@ textarea { resize: vertical; min-height: 60px; }
   gap: 6px;
   padding: 5px 6px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 16px;
   cursor: pointer;
   transition: background .1s;
 }
@@ -196,7 +196,7 @@ textarea { resize: vertical; min-height: 60px; }
   display: flex;
   gap: 6px;
   align-items: flex-start;
-  font-size: 13px;
+  font-size: 16px;
 }
 .log-time { color: var(--text3); white-space: nowrap; flex-shrink: 0; }
 .log-msg  { color: var(--text2); line-height: 1.4; }
@@ -223,7 +223,7 @@ textarea { resize: vertical; min-height: 60px; }
   overflow-y: auto;
 }
 .modal h2 {
-  font-size: 15px;
+  font-size: 18px;
   letter-spacing: 1px;
   color: var(--accent);
   margin-bottom: 16px;
@@ -240,7 +240,7 @@ textarea { resize: vertical; min-height: 60px; }
   color: var(--text2);
   cursor: pointer;
   transition: border-color .2s, color .2s;
-  font-size: 14px;
+  font-size: 17px;
 }
 .upload-zone:hover { border-color: var(--accent); color: var(--accent); }
 .upload-zone.has-file { border-color: var(--accent2); color: var(--accent2); }
@@ -251,11 +251,11 @@ textarea { resize: vertical; min-height: 60px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 /* ── TABLES ──────────────────────────────────────────────────────────────── */
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 16px; }
 .data-table th {
   background: var(--surface2);
   color: var(--text2);
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: 1px;
   text-transform: uppercase;
   padding: 5px 8px;
@@ -292,7 +292,7 @@ textarea { resize: vertical; min-height: 60px; }
   flex-shrink: 0;
 }
 .badge {
-  font-size: 12px;
+  font-size: 14px;
   padding: 1px 6px;
   border-radius: 3px;
   white-space: nowrap;
@@ -314,20 +314,20 @@ textarea { resize: vertical; min-height: 60px; }
   width: 340px;
 }
 .login-box h1 {
-  font-size: 20px;
+  font-size: 24px;
   letter-spacing: 3px;
   color: var(--accent);
   text-transform: uppercase;
   margin-bottom: 6px;
 }
 .login-box p {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text3);
   margin-bottom: 24px;
 }
 .login-error {
   color: var(--accent3);
-  font-size: 14px;
+  font-size: 17px;
   margin-top: 8px;
   min-height: 18px;
 }
