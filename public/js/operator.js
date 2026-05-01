@@ -69,6 +69,15 @@ function handleRaceUpdate(data) {
   if (!race || data.id !== race.id) return;
   race = data;
   updateStartWindowBtn();
+  updateEndRaceBtn();
+  tickClock(); // re-evaluate freeze immediately
+}
+
+function updateEndRaceBtn() {
+  const btn = document.getElementById('end-race-btn');
+  if (!btn) return;
+  const show = race && race.status === 'active';
+  btn.classList.toggle('hidden', !show);
 }
 
 function applyMessagingFlag() {
@@ -97,6 +106,7 @@ function handleInit(data) {
   applyMessagingFlag();
   applyWeatherFlag();
   updateStartWindowBtn();
+  updateEndRaceBtn();
 
   heats = {}; (data.heats || []).forEach(h => heats[h.id] = h);
   classes = {}; (data.classes || []).forEach(c => classes[c.id] = c);
@@ -127,6 +137,7 @@ async function loadInitialData() {
   updateRacePill(race);
   applyMessagingFlag();
   applyWeatherFlag();
+  updateEndRaceBtn();
 
   const [pr, sr, hr, cr, personnelR, msgR] = await Promise.all([
     RT.get(`/api/races/${race.id}/participants`),
@@ -816,6 +827,8 @@ function handleParticipantUpdate(data) {
     renderAllMarkers();
     renderLeaderboard();
   }
+  // Retick clock in case a status change causes the clock to freeze/unfreeze
+  tickClock();
 }
 
 function handleStationUpdate(data) {
@@ -1138,15 +1151,67 @@ function checkStopped() {
 }
 
 // ── Clock ─────────────────────────────────────────────────────────────────────
+function clockFrozenValue() {
+  // Returns the elapsed seconds to display when the clock is frozen, or null if no data
+  const allP = Object.values(participants);
+  const started = allP.filter(p => p.start_time);
+  if (!started.length) return null;
+  const earliest = Math.min(...started.map(p => p.start_time));
+  // Use the latest finish_time among those who have one, otherwise latest last_seen
+  const finished = started.filter(p => p.finish_time);
+  const latest = finished.length
+    ? Math.max(...finished.map(p => p.finish_time))
+    : Math.max(...started.map(p => p.last_seen || p.start_time));
+  return Math.max(0, latest - earliest);
+}
+
+function allParticipantsAccountedFor() {
+  const allP = Object.values(participants);
+  if (!allP.length) return false;
+  return allP.every(p => p.status === 'dns' || p.status === 'dnf' || p.status === 'finished');
+}
+
+function tickClock() {
+  const el = document.getElementById('race-clock');
+  if (!el) return;
+  const countUp = race?.clock_seconds !== 0;
+
+  // Freeze conditions: race not active OR all participants accounted for
+  const freeze = !race || race.status !== 'active' || allParticipantsAccountedFor();
+
+  if (freeze) {
+    const val = clockFrozenValue();
+    el.textContent = val != null ? RT.fmtElapsed(val, countUp) : '--:--:--';
+    el.style.opacity = '0.5';
+    return;
+  }
+
+  el.style.opacity = '1';
+  const now = Math.floor(Date.now() / 1000);
+  // Use the earliest start_time among active/started participants as the clock origin
+  const started = Object.values(participants).filter(p => p.start_time && p.status === 'active');
+  if (!started.length) {
+    el.textContent = '--:--:--';
+    return;
+  }
+  const earliest = Math.min(...started.map(p => p.start_time));
+  const elapsed = now - earliest;
+  el.textContent = RT.fmtElapsed(elapsed > 0 ? elapsed : 0, countUp);
+}
+
 function startClock() {
   clearInterval(clockInterval);
-  clockInterval = setInterval(() => {
-    if (!race) return;
-    const now = Math.floor(Date.now() / 1000);
-    const active = Object.values(participants).find(p => p.status === 'active' && p.start_time);
-    const elapsed = active ? now - active.start_time : 0;
-    document.getElementById('race-clock').textContent = RT.fmtElapsed(elapsed > 0 ? elapsed : 0, race?.clock_seconds !== 0);
-  }, 1000);
+  tickClock(); // immediate render
+  clockInterval = setInterval(tickClock, 1000);
+}
+
+async function endRace() {
+  if (!race) return;
+  if (!confirm(`End race "${race.name}"?\n\nThis will mark the race as complete and stop the clock.`)) return;
+  const res = await RT.post(`/api/races/${race.id}/end`, {});
+  if (!res.ok) { RT.toast('Failed to end race', 'warn'); return; }
+  RT.toast('Race ended', 'info');
+  // handleRaceUpdate will fire via WebSocket broadcast
 }
 
 // ── Right panel tabs ──────────────────────────────────────────────────────────
@@ -1336,5 +1401,5 @@ init();
 
 return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipant,
          openEditModal, sendMessage, dismissAlert, showViewerLink, copyViewerLink,
-         toggleStartWindow };
+         toggleStartWindow, endRace };
 })();

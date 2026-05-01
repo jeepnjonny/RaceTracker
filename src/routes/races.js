@@ -91,7 +91,20 @@ router.post('/:id/deactivate', requireRole('admin'), (req, res) => {
   db.prepare("UPDATE races SET status='past' WHERE id=? AND status='active'").run(req.params.id);
   if (race) logger.log('race', 'info', `DEACTIVATED — ${race.name}`);
   // MQTT stays connected — handlePosition checks for active race before recording data
+  const updated = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
+  if (updated) wsManager.broadcast({ type: 'race_update', data: updated });
   res.json({ ok: true });
+});
+
+// End/stop a race (operator or admin) — marks as past, broadcasts race_update
+router.post('/:id/end', requireRole('admin', 'operator'), (req, res) => {
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
+  if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
+  db.prepare("UPDATE races SET status='past' WHERE id=?").run(req.params.id);
+  logger.log('race', 'info', `ENDED by operator — ${race.name}`);
+  const updated = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
+  wsManager.broadcast({ type: 'race_update', data: updated });
+  res.json({ ok: true, data: updated });
 });
 
 // Clone a race (copies settings, heats, classes, stations; NOT participants)
