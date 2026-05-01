@@ -1,7 +1,8 @@
 'use strict';
 const express = require('express');
 const db = require('../db');
-const { requireAuth } = require('../auth');
+const { requireAuth, requireRole } = require('../auth');
+const logger = require('../logger');
 const router = express.Router({ mergeParams: true });
 
 // GET /api/races/:raceId/rf-analysis
@@ -11,7 +12,7 @@ router.get('/', requireAuth, (req, res) => {
   const raceId = req.params.raceId;
   const { sources } = req.query;
 
-  let sql = `SELECT lat, lon, snr, rssi, rf_source, timestamp
+  let sql = `SELECT node_id, lat, lon, snr, rssi, rf_source, timestamp
              FROM tracker_positions
              WHERE race_id=? AND lat IS NOT NULL AND lon IS NOT NULL`;
   const args = [raceId];
@@ -80,6 +81,15 @@ router.get('/nodes', requireAuth, (req, res) => {
   `).all(raceId);
 
   res.json({ ok: true, data: nodes });
+});
+
+// DELETE /api/races/:raceId/rf-analysis
+// Purge all RF position data for this race (keeps participant/event records intact)
+router.delete('/', requireRole('admin', 'operator'), (req, res) => {
+  const raceId = req.params.raceId;
+  const info = db.prepare('DELETE FROM tracker_positions WHERE race_id=?').run(raceId);
+  logger.log('race', 'info', `RF data cleared for race ${raceId}: ${info.changes} records deleted by ${req.session.user.username}`);
+  res.json({ ok: true, deleted: info.changes });
 });
 
 module.exports = router;

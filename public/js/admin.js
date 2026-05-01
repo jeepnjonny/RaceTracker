@@ -1897,4 +1897,9 @@ function clearLogView() {
   if (el) el.innerHTML = '';
 }
 
+function goToRFAnalysis() {
+  const url = RT.BASE + 'rf-analysis.html' + (activeRaceId ? `?race=${activeRaceId}` : '');
+  window.location.href = url;
+}
+
 init();

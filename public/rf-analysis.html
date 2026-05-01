@@ -12,45 +12,94 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 <style>
   body { overflow: hidden; }
+
+  /* ── Three-column layout ── */
+  #main { display: flex; flex-direction: row; flex: 1; overflow: hidden; }
+
   #sidebar {
-    width: 300px; flex-shrink: 0;
+    width: 260px; flex-shrink: 0;
     background: var(--surface); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; overflow: hidden;
   }
   #sidebar-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-  #map-wrap { flex: 1; position: relative; }
+
+  #map-wrap { flex: 1; position: relative; min-width: 0; }
   #map { width: 100%; height: 100%; }
 
+  #right-panel {
+    width: 320px; flex-shrink: 0;
+    background: var(--surface); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .rp-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .rp-tab  { flex: 1; padding: 8px 4px; font-size: 12px; letter-spacing: 1px; text-align: center;
+              cursor: pointer; color: var(--text3); border-bottom: 2px solid transparent; }
+  .rp-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .rp-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Shared control blocks ── */
   .ctrl-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
   .ctrl-title { font-size: 11px; letter-spacing: 2px; color: var(--text3); text-transform: uppercase; margin-bottom: 8px; }
 
+  /* ── Source list ── */
   .src-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
   .src-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .src-label { flex: 1; font-size: 14px; }
   .src-count { font-size: 13px; color: var(--text3); }
 
+  /* ── Metric buttons ── */
   .metric-btn { flex: 1; padding: 5px 4px; font-size: 13px; text-align: center; border-radius: 4px; cursor: pointer;
     background: var(--surface2); border: 1px solid var(--border); color: var(--text2); }
   .metric-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: bold; }
 
+  /* ── Sliders ── */
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row label { font-size: 13px; color: var(--text2); white-space: nowrap; }
+  .slider-row input { flex: 1; }
+  .slider-row span { font-size: 13px; color: var(--accent); min-width: 32px; text-align: right; }
+
+  /* ── Stats ── */
+  .stat-row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+  .stat-val  { color: var(--accent); font-weight: bold; }
+
+  /* ── Node list ── */
   .node-row { display: flex; align-items: center; gap: 6px; padding: 5px 4px;
     border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer; }
   .node-row:hover { background: var(--surface2); }
   .node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .node-pkt  { font-size: 12px; color: var(--text3); white-space: nowrap; }
 
+  /* ── Raw data table ── */
+  #raw-table-wrap { overflow-x: auto; }
+  #raw-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #raw-table th { position: sticky; top: 0; background: var(--surface2); color: var(--text3);
+    font-size: 11px; letter-spacing: 1px; padding: 5px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+  #raw-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); color: var(--text2); white-space: nowrap; }
+  #raw-table tr:hover td { background: var(--surface2); }
+
+  /* ── Signal legend ── */
+  #signal-legend {
+    position: absolute; bottom: 30px; left: 10px; z-index: 1000;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; font-size: 12px; color: var(--text2); display: none;
+  }
+  #signal-legend.visible { display: block; }
+  .legend-bar {
+    height: 10px; width: 160px; border-radius: 3px; margin: 4px 0 2px;
+    background: linear-gradient(to right, #f85149, #fafa00, #3fb950, #58a6ff);
+  }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); }
+
+  /* ── Loading overlay ── */
   #loading-overlay {
     position: absolute; inset: 0; background: rgba(0,0,0,.5);
     display: flex; align-items: center; justify-content: center;
     z-index: 2000; font-size: 18px; letter-spacing: 2px; color: var(--text);
   }
-  .stat-row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
-  .stat-val  { color: var(--accent); font-weight: bold; }
 
-  .slider-row { display: flex; align-items: center; gap: 8px; }
-  .slider-row label { font-size: 13px; color: var(--text2); white-space: nowrap; }
-  .slider-row input { flex: 1; }
-  .slider-row span { font-size: 13px; color: var(--accent); min-width: 32px; text-align: right; }
+  /* ── Danger button ── */
+  .btn-danger { background: rgba(248,81,73,.15); border-color: #f85149; color: #f85149; width: 100%; margin-top: 6px; }
+  .btn-danger:hover { background: rgba(248,81,73,.28); }
 </style>
 </head>
 <body>
@@ -64,6 +113,8 @@
 </div>
 
 <div id="main">
+
+  <!-- ── Left sidebar: controls ── -->
   <div id="sidebar">
     <div id="sidebar-body">
 
@@ -78,7 +129,7 @@
       <!-- Technology filter -->
       <div class="ctrl-block">
         <div class="ctrl-title">Technology</div>
-        <div id="src-list"></div>
+        <div id="src-list"><span class="text-dim" style="font-size:13px">No data</span></div>
       </div>
 
       <!-- Metric -->
@@ -102,36 +153,86 @@
           </div>
           <div class="slider-row">
             <label>Radius</label>
-            <input type="range" min="10" max="60" value="25" id="sl-radius" oninput="RF.setRadius(this.value)">
-            <span id="lbl-radius">25</span>
+            <input type="range" min="5" max="60" value="20" id="sl-radius" oninput="RF.setRadius(this.value)">
+            <span id="lbl-radius">20</span>
           </div>
           <div class="slider-row">
             <label>Blur</label>
-            <input type="range" min="5" max="40" value="15" id="sl-blur" oninput="RF.setBlur(this.value)">
-            <span id="lbl-blur">15</span>
+            <input type="range" min="5" max="40" value="12" id="sl-blur" oninput="RF.setBlur(this.value)">
+            <span id="lbl-blur">12</span>
           </div>
         </div>
       </div>
 
-      <!-- Summary stats -->
-      <div class="ctrl-block" id="stats-block">
-        <div class="ctrl-title">Summary</div>
-        <div id="stats-body"><span class="text-dim" style="font-size:13px">No data</span></div>
-      </div>
-
-      <!-- Node list -->
+      <!-- Clear data -->
       <div class="ctrl-block">
-        <div class="ctrl-title">Nodes / Trackers</div>
-        <div id="node-list"><span class="text-dim" style="font-size:13px">No data</span></div>
+        <div class="ctrl-title">Data</div>
+        <button class="btn-danger" onclick="RF.clearData()">CLEAR RF DATA</button>
       </div>
 
     </div>
   </div>
 
+  <!-- ── Map ── -->
   <div id="map-wrap">
     <div id="map"></div>
+
+    <!-- Signal quality legend (shown for SNR/RSSI modes) -->
+    <div id="signal-legend">
+      <div style="font-size:11px;letter-spacing:1px;color:var(--text3);margin-bottom:2px" id="legend-title">SNR</div>
+      <div class="legend-bar"></div>
+      <div class="legend-labels">
+        <span id="legend-min">Weak</span>
+        <span id="legend-max">Strong</span>
+      </div>
+    </div>
+
     <div id="loading-overlay" style="display:none">LOADING…</div>
   </div>
+
+  <!-- ── Right panel: stats / nodes / raw data ── -->
+  <div id="right-panel">
+    <div class="rp-tabs">
+      <div class="rp-tab active" onclick="RF.switchTab('stats')" id="rp-tab-stats">SUMMARY</div>
+      <div class="rp-tab" onclick="RF.switchTab('nodes')" id="rp-tab-nodes">NODES</div>
+      <div class="rp-tab" onclick="RF.switchTab('raw')" id="rp-tab-raw">RAW DATA</div>
+    </div>
+    <div class="rp-body">
+      <!-- Stats tab -->
+      <div id="rp-stats">
+        <div id="stats-body"><span class="text-dim" style="font-size:13px">No data</span></div>
+      </div>
+      <!-- Nodes tab -->
+      <div id="rp-nodes" style="display:none">
+        <div id="node-list"><span class="text-dim" style="font-size:13px">No data</span></div>
+      </div>
+      <!-- Raw data tab -->
+      <div id="rp-raw" style="display:none">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:6px">
+          Showing up to 500 most recent packets. Use filters to narrow by source.
+        </div>
+        <div id="raw-table-wrap">
+          <table id="raw-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Src</th>
+                <th>Node</th>
+                <th>Lat</th>
+                <th>Lon</th>
+                <th>SNR</th>
+                <th>RSSI</th>
+              </tr>
+            </thead>
+            <tbody id="raw-tbody">
+              <tr><td colspan="7" style="color:var(--text3);padding:10px;text-align:center">No data</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="js/common.js"></script>
