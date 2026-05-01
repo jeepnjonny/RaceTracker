@@ -68,7 +68,12 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
   const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
   if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
   if (race.status === 'active') return res.status(400).json({ ok: false, error: 'Cannot delete active race. Set to past first.' });
-  db.prepare('DELETE FROM races WHERE id=?').run(req.params.id);
+  // Some FK references lack ON DELETE CASCADE — clear them manually before deleting
+  db.transaction(() => {
+    db.prepare('UPDATE races SET cloned_from=NULL WHERE cloned_from=?').run(req.params.id);
+    db.prepare('DELETE FROM tracker_positions WHERE race_id=?').run(req.params.id);
+    db.prepare('DELETE FROM races WHERE id=?').run(req.params.id);
+  })();
   res.json({ ok: true });
 });
 
