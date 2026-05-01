@@ -22,7 +22,9 @@ let heatRadius      = 20;
 let heatBlur        = 12;
 let heatOpacity     = 0.70;
 let rightTab        = 'stats';
-let timeWindowHours = 0;           // 0 = all data
+let timeWindowMode  = 'race';      // 'race' | 'all'
+let raceWindowStart = null;        // computed unix ts
+let raceWindowEnd   = null;        // computed unix ts (null = live/now)
 let showCoverage    = false;
 
 // Source metadata
@@ -96,6 +98,9 @@ async function selectRace(raceId) {
   routePoints  = (trackRes.ok && trackRes.data?.trackPoints?.length)
     ? trackRes.data.trackPoints.map(([lat, lon]) => [lat, lon]) : [];
 
+  // Compute race time bounds before any rendering
+  computeRaceBounds();
+
   // Build active sources from data
   const foundSources = new Set(allPositions.map(p => p.rf_source || 'meshtastic'));
   activeSources = new Set(foundSources);
@@ -150,8 +155,22 @@ function fitMapToCourse() {
 }
 
 // ── Time window ────────────────────────────────────────────────────────────────
+function computeRaceBounds() {
+  const race = races.find(r => r.id === currentRaceId);
+  if (!race || !allPositions.length) { raceWindowStart = null; raceWindowEnd = null; return; }
+
+  const posMin = Math.min(...allPositions.map(p => p.timestamp));
+  const posMax = Math.max(...allPositions.map(p => p.timestamp));
+
+  // Start: prefer race.start_time, fall back to earliest packet
+  raceWindowStart = race.start_time || posMin;
+
+  // End: live races use wall clock; completed/past use latest packet
+  raceWindowEnd = race.status === 'active' ? null : posMax;
+}
+
 function setTimeWindow(val) {
-  timeWindowHours = parseInt(val) || 0;
+  timeWindowMode = val;
   renderHeatmap();
   renderCoveragePolygons();
   renderRawTable();
@@ -160,19 +179,34 @@ function setTimeWindow(val) {
 }
 
 function updateTimeWindowInfo() {
-  const el = document.getElementById('time-window-info');
-  if (!el) return;
+  const rangeEl = document.getElementById('time-window-range');
+  const countEl = document.getElementById('time-window-info');
+  if (!rangeEl || !countEl) return;
+
+  if (!allPositions.length) { rangeEl.textContent = ''; countEl.textContent = ''; return; }
+
+  if (timeWindowMode === 'race' && raceWindowStart != null) {
+    const endTs  = raceWindowEnd ?? Math.floor(Date.now() / 1000);
+    const fmt    = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const fmtDay = ts => new Date(ts * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const sameDay = fmtDay(raceWindowStart) === fmtDay(endTs);
+    rangeEl.innerHTML = sameDay
+      ? `${fmtDay(raceWindowStart)}&nbsp; ${fmt(raceWindowStart)} → ${fmt(endTs)}${raceWindowEnd == null ? ' <span style="color:var(--accent2)">● LIVE</span>' : ''}`
+      : `${fmtDay(raceWindowStart)} ${fmt(raceWindowStart)} → ${fmtDay(endTs)} ${fmt(endTs)}`;
+  } else {
+    rangeEl.textContent = '';
+  }
+
   const visible = filteredPositions();
-  if (!allPositions.length) { el.textContent = ''; return; }
-  el.textContent = `${visible.length.toLocaleString()} of ${allPositions.length.toLocaleString()} packets`;
+  countEl.textContent = `${visible.length.toLocaleString()} of ${allPositions.length.toLocaleString()} packets`;
 }
 
 // Returns positions filtered by active sources AND time window
 function filteredPositions() {
   let pts = allPositions.filter(p => activeSources.has(p.rf_source || 'meshtastic'));
-  if (timeWindowHours > 0) {
-    const cutoff = Math.max(...allPositions.map(p => p.timestamp)) - timeWindowHours * 3600;
-    pts = pts.filter(p => p.timestamp >= cutoff);
+  if (timeWindowMode === 'race' && raceWindowStart != null) {
+    const endTs = raceWindowEnd ?? Math.floor(Date.now() / 1000);
+    pts = pts.filter(p => p.timestamp >= raceWindowStart && p.timestamp <= endTs);
   }
   return pts;
 }
