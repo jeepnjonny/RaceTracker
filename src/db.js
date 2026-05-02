@@ -247,6 +247,13 @@ try { db.prepare('ALTER TABLE heats ADD COLUMN start_time INTEGER').run(); } cat
 try { db.prepare("ALTER TABLE tracker_positions ADD COLUMN rf_source TEXT DEFAULT 'meshtastic'").run(); } catch {}
 try { db.prepare('ALTER TABLE tracker_registry ADD COLUMN rf_tech TEXT').run(); } catch {}
 try { db.prepare("ALTER TABLE races ADD COLUMN mqtt_rf_tech TEXT NOT NULL DEFAULT 'meshtastic'").run(); } catch {}
+try { db.prepare("ALTER TABLE races ADD COLUMN units TEXT NOT NULL DEFAULT 'us'").run(); } catch {}
+try { db.prepare("ALTER TABLE races ADD COLUMN speed_display TEXT NOT NULL DEFAULT 'pace'").run(); } catch {}
+// Migrate existing speed_units → new fields (safe to run repeatedly; WHERE guards idempotency)
+try {
+  db.prepare("UPDATE races SET units='metric' WHERE speed_units IN ('min_km','kmh') AND units='us'").run();
+  db.prepare("UPDATE races SET speed_display='speed' WHERE speed_units IN ('mph','kmh') AND speed_display='pace'").run();
+} catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();

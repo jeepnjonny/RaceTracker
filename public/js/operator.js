@@ -198,7 +198,7 @@ async function loadTrackData() {
   if (res.ok && res.data?.trackPoints) {
     trackPoints = res.data.trackPoints;
     _cachedDists = null; _cachedTotalDist = null; _stationAlongCache = null;
-    document.getElementById('stat-dist').textContent = RT.fmtDist(res.data.totalDistance);
+    document.getElementById('stat-dist').textContent = RT.fmtDist(res.data.totalDistance, race?.units);
     renderRoute();
   }
 }
@@ -546,10 +546,9 @@ function getStationElevation(station) {
 
 function fmtElevation(meters) {
   if (meters == null) return null;
-  const useImperial = !race?.speed_units || race.speed_units === 'min_mile' || race.speed_units === 'mph';
-  return useImperial
-    ? `${Math.round(meters * 3.28084).toLocaleString()} ft`
-    : `${Math.round(meters)} m`;
+  return race?.units === 'metric'
+    ? `${Math.round(meters)} m`
+    : `${Math.round(meters * 3.28084).toLocaleString()} ft`;
 }
 
 function getStationAlongMap() {
@@ -892,8 +891,9 @@ function fmtEtaDelta(secs) {
 }
 
 function fmtEtaDist(meters) {
-  if (race?.speed_units === 'min_mile') return (meters / 1609.34).toFixed(1) + ' mi';
-  return (meters / 1000).toFixed(1) + ' km';
+  return race?.units === 'metric'
+    ? (meters / 1000).toFixed(1) + ' km'
+    : (meters / 1609.34).toFixed(1) + ' mi';
 }
 
 async function showParticipantInfo(id) {
@@ -1088,7 +1088,7 @@ function showStationInfo(id) {
     const alongMap = getStationAlongMap();
     const along = alongMap.get(id);
     const totalDist = computeTotalDist();
-    const distStr  = along != null ? RT.fmtDist(along) : null;
+    const distStr  = along != null ? RT.fmtDist(along, race?.units) : null;
     const pctStr   = (along != null && totalDist > 0) ? `${(along / totalDist * 100).toFixed(1)}%` : null;
     const elevStr  = fmtElevation(getStationElevation(s));
     const coordStr = (s.lat && s.lon) ? `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}` : null;

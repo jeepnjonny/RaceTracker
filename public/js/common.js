@@ -81,9 +81,13 @@ const RT = (() => {
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
 
-  function fmtDist(meters) {
+  function fmtDist(meters, units) {
     if (meters == null) return '--';
-    return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`;
+    if (units === 'metric') {
+      return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`;
+    }
+    const feet = meters * 3.28084;
+    return feet >= 5280 ? `${(feet / 5280).toFixed(2)} mi` : `${Math.round(feet)} ft`;
   }
 
   function fmtSpeed(mPerSec, units) {

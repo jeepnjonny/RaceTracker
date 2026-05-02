@@ -239,7 +239,8 @@ async function openRaceModal(id) {
   document.getElementById('rm-missing-timer').value  = Math.round((race?.missing_timer || 3600) / 60);
   document.getElementById('rm-geofence').value            = race?.geofence_radius || 15;
   document.getElementById('rm-checkpoint-radius').value   = race?.checkpoint_radius || 50;
-  document.getElementById('rm-speed-units').value         = race?.speed_units || 'min_mile';
+  document.getElementById('rm-units').value                = race?.units || 'us';
+  document.getElementById('rm-speed-display').value       = race?.speed_display || 'pace';
   document.getElementById('rm-off-course').value     = race?.off_course_distance || 100;
   document.getElementById('rm-stopped').value        = Math.round((race?.stopped_time || 600) / 60);
   document.getElementById('rm-feat-missing').checked    = !!(race?.feat_missing   ?? 1);
@@ -277,7 +278,8 @@ async function saveRace() {
     missing_timer:       parseInt(document.getElementById('rm-missing-timer').value) * 60,
     geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
     checkpoint_radius:   parseInt(document.getElementById('rm-checkpoint-radius').value),
-    speed_units:         document.getElementById('rm-speed-units').value,
+    units:               document.getElementById('rm-units').value,
+    speed_display:       document.getElementById('rm-speed-display').value,
     off_course_distance: parseInt(document.getElementById('rm-off-course').value),
     stopped_time:        parseInt(document.getElementById('rm-stopped').value) * 60,
     feat_missing:        document.getElementById('rm-feat-missing').checked    ? 1 : 0,

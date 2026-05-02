@@ -12,9 +12,21 @@ const RACE_FIELDS = [
   'name','date','status','time_format','clock_seconds','geofence_radius','checkpoint_radius','off_course_distance',
   'stopped_time','missing_timer','alerts_enabled','messaging_enabled',
   'viewer_map_enabled','leaderboard_enabled','weather_enabled','course_id','race_format',
-  'feat_missing','feat_auto_log','feat_auto_start','feat_off_course','feat_stopped','speed_units',
-  'start_time','start_clearance','mqtt_rf_tech',
+  'feat_missing','feat_auto_log','feat_auto_start','feat_off_course','feat_stopped',
+  'start_time','start_clearance','mqtt_rf_tech','units','speed_display',
 ];
+
+const SPEED_UNITS = {
+  us_pace: 'min_mile', us_speed: 'mph',
+  metric_pace: 'min_km', metric_speed: 'kmh',
+};
+
+function applyDerivedFields(raceId) {
+  const r = db.prepare('SELECT units, speed_display FROM races WHERE id=?').get(raceId);
+  if (!r) return;
+  const su = SPEED_UNITS[`${r.units || 'us'}_${r.speed_display || 'pace'}`] || 'min_mile';
+  db.prepare('UPDATE races SET speed_units=? WHERE id=?').run(su, raceId);
+}
 
 router.get('/', requireAuth, (req, res) => {
   const races = db.prepare(`
@@ -40,6 +52,7 @@ router.post('/', requireRole('admin'), (req, res) => {
   const { name, date } = req.body;
   if (!name || !date) return res.status(400).json({ ok: false, error: 'name and date required' });
   const result = db.prepare('INSERT INTO races (name, date) VALUES (?,?)').run(name, date);
+  applyDerivedFields(result.lastInsertRowid);
   const race = db.prepare('SELECT * FROM races WHERE id=?').get(result.lastInsertRowid);
   res.json({ ok: true, data: race });
 });
@@ -56,6 +69,8 @@ router.put('/:id', requireRole('admin'), (req, res) => {
 
   const sets = Object.keys(updates).map(k => `${k}=?`).join(',');
   db.prepare(`UPDATE races SET ${sets} WHERE id=?`).run(...Object.values(updates), req.params.id);
+
+  applyDerivedFields(parseInt(req.params.id));
 
   // Reconnect MQTT if race is active (settings may have changed)
   if (race.status === 'active') mqttClient.connectFromSettings(db);
