@@ -249,7 +249,11 @@ async function openRaceModal(id) {
   document.getElementById('rm-race-format').value    = race?.race_format || 'point_to_point';
   document.getElementById('rm-start-time').value      = unixToTimeStr(race?.start_time);
   document.getElementById('rm-start-clearance').value  = race?.start_clearance ?? 400;
-  document.getElementById('rm-mqtt-rf-tech').value     = race?.mqtt_rf_tech || 'meshtastic';
+  // Populate datasource enable checkboxes from global settings
+  const sRes = await RT.get('/api/settings');
+  const settings = sRes.ok ? sRes.data : {};
+  document.getElementById('rm-mqtt-enabled').checked = settings.mqtt_enabled !== '0';
+  document.getElementById('rm-aprs-enabled').checked = settings.aprs_enabled === '1';
   // Populate course dropdown
   const cr = await RT.get('/api/courses');
   const cSel = document.getElementById('rm-course-id');
@@ -284,13 +288,17 @@ async function saveRace() {
     race_format:         document.getElementById('rm-race-format').value,
     start_time:          parseTimeToUnix(document.getElementById('rm-start-time').value, document.getElementById('rm-date').value) ?? null,
     start_clearance:     parseInt(document.getElementById('rm-start-clearance').value) || 400,
-    mqtt_rf_tech:        document.getElementById('rm-mqtt-rf-tech').value,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId
     ? await RT.put(`/api/races/${editingRaceId}`, body)
     : await RT.post('/api/races', body);
   if (res.ok) {
+    // Save datasource enable flags to global settings
+    await RT.put('/api/settings', {
+      mqtt_enabled: document.getElementById('rm-mqtt-enabled').checked ? '1' : '0',
+      aprs_enabled: document.getElementById('rm-aprs-enabled').checked ? '1' : '0',
+    });
     closeModal('race-modal');
     if (!editingRaceId && res.data?.id) {
       await loadRaces();
@@ -1542,12 +1550,11 @@ async function deleteUser(id) {
 // ── Settings ──────────────────────────────────────────────────────────────────
 function renderSettingsTab() {
   return `
+  <div style="font-size:13px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:10px">
+    &#9432; Enable / disable each datasource in the <strong>Race Configuration</strong> modal (edit any race → DATASOURCES section). Auto-enabled when matching tracker IDs are detected in participants.
+  </div>
   <div class="card">
     <h3>MESHTASTIC / MQTT</h3>
-    <div class="checkbox-row" style="margin-bottom:10px">
-      <input type="checkbox" id="s-mqtt-enabled" checked>
-      <label for="s-mqtt-enabled" style="font-size:16px">Enable MQTT data source</label>
-    </div>
     <div class="form-row">
       <div class="form-group"><label>BROKER HOST</label><input id="s-mqtt-host" placeholder="apps.k7swi.org"></div>
       <div class="form-group">
@@ -1589,10 +1596,6 @@ function renderSettingsTab() {
 
   <div class="card">
     <h3>APRS-IS</h3>
-    <div class="checkbox-row" style="margin-bottom:10px">
-      <input type="checkbox" id="s-aprs-enabled" onchange="updateAprsFilterPreview()">
-      <label for="s-aprs-enabled" style="font-size:16px">Enable APRS-IS data source</label>
-    </div>
     <div class="form-row">
       <div class="form-group"><label>CALLSIGN</label><input id="s-aprs-callsign" placeholder="K7SWI" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="form-group"><label>PASSCODE <span class="text-dim">(-1 = read-only)</span></label><input id="s-aprs-passcode" placeholder="-1" value="-1"></div>
@@ -1652,7 +1655,6 @@ async function bindSettingsTab() {
   if (!sRes.ok) return;
   const s = sRes.data;
 
-  document.getElementById('s-mqtt-enabled').checked    = s.mqtt_enabled !== '0';
   document.getElementById('s-mqtt-host').value         = s.mqtt_host || '';
   document.getElementById('s-mqtt-protocol').value     = s.mqtt_protocol || 'tcp';
   document.getElementById('s-mqtt-port').value         = s.mqtt_port || s.mqtt_port_ws || (s.mqtt_protocol === 'ws' ? '9001' : '1883');
@@ -1663,7 +1665,6 @@ async function bindSettingsTab() {
   document.getElementById('s-mqtt-psk').value          = s.mqtt_psk || '';
   document.getElementById('s-mqtt-diagnostic').checked = s.mqtt_diagnostic === '1';
 
-  document.getElementById('s-aprs-enabled').checked  = s.aprs_enabled === '1';
   document.getElementById('s-aprs-callsign').value   = s.aprs_callsign || '';
   document.getElementById('s-aprs-passcode').value   = s.aprs_passcode || '-1';
   document.getElementById('s-aprs-server').value     = s.aprs_server || 'rotate.aprs2.net';
@@ -1679,7 +1680,6 @@ async function bindSettingsTab() {
 
 async function saveMqttSettings() {
   const res = await RT.put('/api/settings', {
-    mqtt_enabled:    document.getElementById('s-mqtt-enabled').checked ? '1' : '0',
     mqtt_host:       document.getElementById('s-mqtt-host').value.trim() || null,
     mqtt_protocol:   document.getElementById('s-mqtt-protocol').value,
     mqtt_port:       document.getElementById('s-mqtt-port').value || '1883',
@@ -1697,7 +1697,6 @@ async function saveMqttSettings() {
 async function saveAprsSettings() {
   const filterType = document.querySelector('input[name="aprs-filter"]:checked')?.value || 'location';
   const res = await RT.put('/api/settings', {
-    aprs_enabled:     document.getElementById('s-aprs-enabled').checked ? '1' : '0',
     aprs_callsign:    document.getElementById('s-aprs-callsign').value.trim().toUpperCase() || null,
     aprs_passcode:    document.getElementById('s-aprs-passcode').value.trim() || '-1',
     aprs_server:      document.getElementById('s-aprs-server').value.trim() || 'rotate.aprs2.net',
