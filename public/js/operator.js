@@ -720,7 +720,7 @@ function closeBatchCheckIn() {
   batchStationId = null;
 }
 
-function addBatchRow(bibVal = '', timeVal = '') {
+function addBatchRow(bibVal = '', timeVal = '', focusBib = false) {
   const container = document.getElementById('bc-rows');
   const div = document.createElement('div');
   div.className = 'bc-row';
@@ -733,13 +733,17 @@ function addBatchRow(bibVal = '', timeVal = '') {
       <div class="bc-bib-name text-dim">—</div>
     </div>
     <div>
-      <input class="bc-time-override" placeholder="HH:MM:SS" style="width:100%" value="${timeVal}">
+      <input class="bc-time-override" placeholder="HH:MM:SS" style="width:100%" value="${timeVal}"
+        onkeydown="OP.timeKeydown(event,this)">
     </div>
     <div>
       <button onclick="OP.removeBatchRow(this)" style="padding:2px 6px;color:var(--accent3)">✕</button>
     </div>`;
   container.appendChild(div);
-  if (bibVal) resolveBib(div.querySelector('.bc-bib'));
+  const bibInput = div.querySelector('.bc-bib');
+  if (bibVal) resolveBib(bibInput);
+  if (focusBib) bibInput.focus();
+  return bibInput;
 }
 
 function removeBatchRow(btn) {
@@ -755,14 +759,25 @@ function removeBatchRow(btn) {
 }
 
 function bibKeydown(e, input) {
-  // Tab or Enter on bib field: resolve and move to next bib (or add row)
   if (e.key === 'Enter') {
     e.preventDefault();
     resolveBib(input);
     const rows = [...document.querySelectorAll('#bc-rows .bc-bib')];
     const idx = rows.indexOf(input);
-    if (idx === rows.length - 1) addBatchRow();
+    if (idx === rows.length - 1) addBatchRow('', '', true);
     else rows[idx + 1]?.focus();
+  }
+}
+
+function timeKeydown(e, input) {
+  if (e.key === 'Tab' && !e.shiftKey) {
+    const rows = [...document.querySelectorAll('#bc-rows .bc-time-override')];
+    const idx = rows.indexOf(input);
+    if (idx === rows.length - 1) {
+      e.preventDefault();
+      addBatchRow('', '', true);
+    }
+    // if not the last row, let Tab fall through naturally to next row's bib
   }
 }
 
