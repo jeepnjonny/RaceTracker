@@ -11,7 +11,8 @@ let wxAlertPoller = null;
 let owmKey = null;
 let wxSetupInProgress = false;
 let sortBy = 'position', selectedPId = null, selectedStationId = null;
-let alerts = [], rightTab = 'info';
+let alerts = [], rightTab = 'info', leftTab = 'participants';
+let batchStationId = null;
 
 const LAYER_LEGENDS = {
 'Precipitation': { label:'PRECIP (mm/h)',    grad:'#c8e6fa,#64b4fa,#1464d2,#00be00,#fafa00,#fa8c32,#fa3232', ticks:['0.1','1','5','25','100','140'] },
@@ -120,6 +121,7 @@ function handleInit(data) {
   if (data.trackPoints?.length) { trackPoints = data.trackPoints; _cachedDists = null; _cachedTotalDist = null; _stationAlongCache = null; }
   renderRoute();
   renderStationMarkers();
+  renderStationList();
   renderAllMarkers();
   renderLeaderboard();
   renderPersonnelRecipients();
@@ -159,6 +161,7 @@ async function loadInitialData() {
 
   renderRoute();
   renderStationMarkers();
+  renderStationList();
   renderAllMarkers();
   renderLeaderboard();
   renderPersonnelRecipients();
@@ -282,7 +285,7 @@ function renderStationMarkers() {
     const marker = L.marker([s.lat, s.lon], { icon })
       .addTo(leafletMap)
       .bindTooltip(s.name, { permanent: false, direction: 'top' });
-    marker.on('click', () => showStationInfo(s.id));
+    marker.on('click', () => selectStation(s.id));
     stationMarkers[s.id] = marker;
   }
 }
@@ -551,6 +554,207 @@ function setSort(key) {
   renderLeaderboard();
 }
 
+// ── Left panel tabs ───────────────────────────────────────────────────────────
+function switchLeftTab(tab) {
+  leftTab = tab;
+  document.getElementById('lp-tab-participants')?.classList.toggle('active', tab === 'participants');
+  document.getElementById('lp-tab-stations')?.classList.toggle('active', tab === 'stations');
+  document.getElementById('lp-participants').style.display = tab === 'participants' ? 'flex' : 'none';
+  document.getElementById('lp-stations').style.display    = tab === 'stations'     ? ''     : 'none';
+}
+
+// ── Station list (left panel) ─────────────────────────────────────────────────
+const STN_COLORS = {
+  start:'#3fb950', finish:'#f78166', start_finish:'#a371f7',
+  turnaround:'#58a6ff', netcontrol:'#d2993a', repeater:'#6e7681',
+};
+function stnColor(type) { return STN_COLORS[type] || '#d2a679'; }
+function stnLabel(type) {
+  return { start:'Start', finish:'Finish', start_finish:'Start/Finish',
+           turnaround:'Turnaround', netcontrol:'Net Control', repeater:'Repeater',
+           aid:'Aid' }[type] || type;
+}
+
+function renderStationList() {
+  const el = document.getElementById('station-list-body');
+  if (!el) return;
+  if (!stations.length) {
+    el.innerHTML = '<div class="text-dim" style="padding:12px;font-size:14px">No stations configured.</div>';
+    return;
+  }
+  el.innerHTML = stations
+    .filter(s => s.lat && s.lon)
+    .map(s => {
+      const color = stnColor(s.type);
+      const stPersonnel = personnel.filter(p => p.station_id === s.id);
+      const sel = s.id === selectedStationId ? ' selected' : '';
+      return `<div class="stn-list-row${sel}" id="stn-row-${s.id}" onclick="OP.selectStation(${s.id})">
+        <span class="stn-type-dot" style="background:${color}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
+          <div style="font-size:12px;color:var(--text3)">${stnLabel(s.type)}${stPersonnel.length ? ` · ${stPersonnel.length} staff` : ''}</div>
+        </div>
+        <button class="primary" style="font-size:12px;padding:2px 7px;flex-shrink:0"
+          onclick="event.stopPropagation();OP.openBatchCheckIn(${s.id})">LOG</button>
+      </div>`;
+    }).join('');
+}
+
+function selectStation(id) {
+  selectedStationId = id;
+  selectedPId = null;
+  switchLeftTab('stations');
+  renderLeaderboard(); // clear participant highlight
+  showStationInfo(id);
+  switchRightTab('info');
+  // Pan map to station
+  const s = stations.find(x => x.id === id);
+  if (s?.lat && s?.lon) leafletMap.panTo([s.lat, s.lon]);
+}
+
+// ── Batch check-in modal ──────────────────────────────────────────────────────
+function openBatchCheckIn(stationId) {
+  batchStationId = stationId;
+  const s = stations.find(x => x.id === stationId);
+  document.getElementById('bc-station-name').textContent = s?.name || '';
+
+  // Sensible default event type by station type
+  const defaults = { start: 'start', start_finish: 'start', finish: 'finish', turnaround: 'aid_depart' };
+  document.getElementById('bc-event-type').value = defaults[s?.type] || 'aid_depart';
+
+  // Pre-fill default time with current HH:MM:SS
+  const now = new Date();
+  document.getElementById('bc-default-time').value =
+    [now.getHours(), now.getMinutes(), now.getSeconds()].map(v => String(v).padStart(2,'0')).join(':');
+
+  // Start with one blank row
+  document.getElementById('bc-rows').innerHTML = '';
+  document.getElementById('bc-status').textContent = '';
+  addBatchRow();
+
+  document.getElementById('batch-checkin-modal').classList.remove('hidden');
+  // Focus the first bib field
+  setTimeout(() => document.querySelector('#bc-rows .bc-bib')?.focus(), 50);
+}
+
+function closeBatchCheckIn() {
+  document.getElementById('batch-checkin-modal').classList.add('hidden');
+  batchStationId = null;
+}
+
+function addBatchRow(bibVal = '', timeVal = '') {
+  const container = document.getElementById('bc-rows');
+  const div = document.createElement('div');
+  div.className = 'bc-row';
+  div.innerHTML = `
+    <div>
+      <input class="bc-bib" placeholder="BIB" style="width:100%" value="${bibVal}"
+        onblur="OP.resolveBib(this)" onkeydown="OP.bibKeydown(event,this)">
+    </div>
+    <div>
+      <div class="bc-bib-name text-dim">—</div>
+    </div>
+    <div>
+      <input class="bc-time-override" placeholder="HH:MM:SS" style="width:100%" value="${timeVal}">
+    </div>
+    <div>
+      <button onclick="OP.removeBatchRow(this)" style="padding:2px 6px;color:var(--accent3)">✕</button>
+    </div>`;
+  container.appendChild(div);
+  if (bibVal) resolveBib(div.querySelector('.bc-bib'));
+}
+
+function removeBatchRow(btn) {
+  const row = btn.closest('.bc-row');
+  const container = document.getElementById('bc-rows');
+  if (container.children.length > 1) row.remove();
+  else { // keep at least one row; just clear it
+    row.querySelector('.bc-bib').value = '';
+    row.querySelector('.bc-bib-name').textContent = '—';
+    row.querySelector('.bc-bib-name').style.color = '';
+    row.querySelector('.bc-time-override').value = '';
+  }
+}
+
+function bibKeydown(e, input) {
+  // Tab or Enter on bib field: resolve and move to next bib (or add row)
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    resolveBib(input);
+    const rows = [...document.querySelectorAll('#bc-rows .bc-bib')];
+    const idx = rows.indexOf(input);
+    if (idx === rows.length - 1) addBatchRow();
+    else rows[idx + 1]?.focus();
+  }
+}
+
+function resolveBib(input) {
+  const bib = input.value.trim();
+  const nameEl = input.closest('.bc-row')?.querySelector('.bc-bib-name');
+  if (!nameEl) return;
+  if (!bib) { nameEl.textContent = '—'; nameEl.style.color = ''; return; }
+  // Match by bib number OR partial name
+  const match = Object.values(participants).find(
+    p => String(p.bib).toLowerCase() === bib.toLowerCase() ||
+         p.name?.toLowerCase().includes(bib.toLowerCase())
+  );
+  if (match) {
+    input.value = match.bib; // normalise to bib number
+    nameEl.textContent = match.name;
+    nameEl.style.color = 'var(--accent2)';
+  } else {
+    nameEl.textContent = 'Not found';
+    nameEl.style.color = 'var(--accent3)';
+  }
+}
+
+async function submitBatchCheckIn() {
+  if (!batchStationId || !race) return;
+  const eventType = document.getElementById('bc-event-type').value;
+  const defaultTimeStr = document.getElementById('bc-default-time').value.trim();
+  const defaultTs = defaultTimeStr
+    ? parseTimeToUnix(defaultTimeStr, race.date)
+    : Math.floor(Date.now() / 1000);
+
+  const rows = document.querySelectorAll('#bc-rows .bc-row');
+  const entries = [];
+  for (const row of rows) {
+    const bib = row.querySelector('.bc-bib').value.trim();
+    if (!bib) continue;
+    const overrideStr = row.querySelector('.bc-time-override').value.trim();
+    const ts = overrideStr ? (parseTimeToUnix(overrideStr, race.date) || defaultTs) : defaultTs;
+    const p = Object.values(participants).find(x => String(x.bib).toLowerCase() === bib.toLowerCase());
+    entries.push({ bib, participantId: p?.id || null, ts });
+  }
+
+  if (!entries.length) { RT.toast('No entries to submit', 'warn'); return; }
+
+  const statusEl = document.getElementById('bc-status');
+  statusEl.textContent = `Submitting ${entries.length} entries…`;
+
+  let ok = 0, fail = 0;
+  for (const e of entries) {
+    if (!e.participantId) { fail++; continue; }
+    const res = await RT.post(`/api/races/${race.id}/events`, {
+      participant_id: e.participantId,
+      event_type: eventType,
+      station_id: batchStationId,
+      timestamp: e.ts,
+    });
+    if (res.ok) ok++; else fail++;
+  }
+
+  const msg = `${ok} logged${fail ? `, ${fail} failed` : ''}`;
+  statusEl.textContent = msg;
+  RT.toast(msg, fail ? 'warn' : 'ok');
+
+  if (ok > 0) {
+    // Refresh station info log
+    showStationInfo(batchStationId);
+    setTimeout(() => closeBatchCheckIn(), 800);
+  }
+}
+
 // ── Participant selection / info ──────────────────────────────────────────────
 function selectParticipant(id) {
   selectedPId = id;
@@ -700,16 +904,19 @@ function showStationInfo(id) {
   const s = stations.find(x => x.id === id);
   if (!s) return;
   switchRightTab('info');
+  renderStationList(); // update selection highlight
 
   RT.get(`/api/races/${race.id}/events?station_id=${id}&limit=50`).then(res => {
     const events = res.ok ? res.data : [];
     const stPersonnel = personnel.filter(p => p.station_id === id);
     const el = document.getElementById('info-panel');
     el.innerHTML = `
-      <div style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <span style="font-size:18px;font-weight:bold;color:var(--accent4)">${s.name}</span>
-        <span class="badge" style="color:var(--accent4);margin-left:6px">${s.type.toUpperCase()}</span>
-        ${s.cutoff_time ? `<span class="text-dim" style="font-size:14px;margin-left:6px">Cutoff: ${s.cutoff_time}</span>` : ''}
+        <span class="badge" style="color:var(--accent4)">${s.type.toUpperCase()}</span>
+        ${s.cutoff_time ? `<span class="text-dim" style="font-size:14px">Cutoff: ${s.cutoff_time}</span>` : ''}
+        <button class="primary" style="margin-left:auto;font-size:13px;padding:3px 10px"
+          onclick="OP.openBatchCheckIn(${id})">LOG CHECK-IN</button>
       </div>
       <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">PERSONNEL (${stPersonnel.length})</div>
       ${stPersonnel.length ? stPersonnel.map(p =>
@@ -718,14 +925,19 @@ function showStationInfo(id) {
           ${p.tracker_id ? `<span class="text-dim" style="font-size:13px">${p.tracker_id}</span>` : ''}
           ${p.phone ? `<span class="text-dim" style="font-size:13px">${p.phone}</span>` : ''}
         </div>`).join('') : '<div class="text-dim" style="font-size:14px;margin-bottom:8px">None assigned.</div>'}
-      <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin:8px 0 6px">ARRIVALS / DEPARTURES</div>
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0 6px">
+        <span style="font-size:13px;letter-spacing:2px;color:var(--text3)">ARRIVALS / DEPARTURES</span>
+        <button style="font-size:12px;padding:1px 7px;margin-left:auto" onclick="OP.openBatchCheckIn(${id})">+ LOG</button>
+      </div>
+      <div id="station-event-log">
       ${events.length === 0 ? '<div class="text-dim" style="font-size:14px">No events yet.</div>' :
         events.map(e => `<div class="log-entry">
           <span class="log-time">${RT.fmtTime(e.timestamp, fmt24)}</span>
           <span class="log-msg ${e.event_type==='aid_arrive'||e.event_type==='start'?'log-info':''}">
             ${e.participant_name ? `#${e.bib} ${e.participant_name}` : '?'} — ${formatEventType(e.event_type)}
           </span>
-        </div>`).join('')}`;
+        </div>`).join('')}
+      </div>`;
   });
 }
 
@@ -910,6 +1122,7 @@ function handleStationUpdate(data) {
     stations = stations.filter(s => s.id !== data.id);
   }
   renderStationMarkers();
+  renderStationList();
   checkStationWarnings();
 }
 
@@ -1472,5 +1685,8 @@ init();
 
 return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipant,
          openEditModal, sendMessage, dismissAlert, showViewerLink, copyViewerLink,
-         toggleStartWindow, endRace };
+         toggleStartWindow, endRace,
+         switchLeftTab, selectStation,
+         openBatchCheckIn, closeBatchCheckIn, addBatchRow, removeBatchRow,
+         resolveBib, bibKeydown, submitBatchCheckIn };
 })();

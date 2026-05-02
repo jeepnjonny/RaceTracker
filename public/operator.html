@@ -65,6 +65,20 @@
   .wx-lbl  { font-size:12px;color:var(--text3);letter-spacing:1px;margin-bottom:3px; }
   .wx-val  { font-size:18px;font-weight:bold;color:var(--text); }
   #wx-legend { pointer-events:none; }
+
+  /* Station list (left panel) */
+  .stn-list-row { display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px; }
+  .stn-list-row:hover { background:var(--surface2); }
+  .stn-list-row.selected { background:rgba(88,166,255,.08);border-left:3px solid var(--accent); }
+  .stn-type-dot { width:11px;height:11px;border-radius:50%;flex-shrink:0; }
+
+  /* Batch check-in modal */
+  #batch-checkin-modal .modal { max-width:540px;width:95vw; }
+  .bc-row { display:grid;grid-template-columns:90px 1fr 110px 28px;gap:6px;align-items:start;padding:4px 0;border-bottom:1px solid var(--border); }
+  .bc-row:last-child { border-bottom:none; }
+  .bc-bib-name { font-size:12px;min-height:16px;margin-top:2px; }
+  .bc-row-header { display:grid;grid-template-columns:90px 1fr 110px 28px;gap:6px;padding:4px 0 2px;border-bottom:1px solid var(--border);margin-bottom:2px; }
+  .bc-row-header span { font-size:11px;letter-spacing:1px;color:var(--text3);text-transform:uppercase; }
 </style>
 </head>
 <body>
@@ -101,21 +115,33 @@
 <!-- MAIN -->
 <div id="main">
 
-  <!-- LEFT: LEADERBOARD -->
-  <div class="panel panel-320" style="overflow:hidden">
-    <div id="sort-bar">
-      <span style="font-size:13px;color:var(--text3);align-self:center">SORT:</span>
-      <button class="sort-btn active" data-sort="position" onclick="OP.setSort('position')">POSITION</button>
-      <button class="sort-btn" data-sort="bib" onclick="OP.setSort('bib')">BIB</button>
-      <button class="sort-btn" data-sort="pace" onclick="OP.setSort('pace')">PACE</button>
-      <button class="sort-btn" data-sort="eta" onclick="OP.setSort('eta')">ETA</button>
-      <button class="sort-btn" data-sort="name" onclick="OP.setSort('name')">NAME</button>
-      <button class="sort-btn" data-sort="heat" onclick="OP.setSort('heat')">HEAT</button>
+  <!-- LEFT: PARTICIPANTS / STATIONS -->
+  <div class="panel panel-320" style="overflow:hidden;display:flex;flex-direction:column">
+    <!-- Tab bar -->
+    <div style="display:flex;flex-shrink:0;border-bottom:1px solid var(--border)">
+      <button class="tab-btn active" id="lp-tab-participants" onclick="OP.switchLeftTab('participants')" style="flex:1">PARTICIPANTS</button>
+      <button class="tab-btn" id="lp-tab-stations" onclick="OP.switchLeftTab('stations')" style="flex:1">STATIONS</button>
     </div>
-    <div class="lb-head">
-      <span>#</span><span>BIB</span><span>NAME</span><span>PROG</span><span>PACE</span><span>&#9889;</span>
+    <!-- Participants pane -->
+    <div id="lp-participants" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div id="sort-bar">
+        <span style="font-size:13px;color:var(--text3);align-self:center">SORT:</span>
+        <button class="sort-btn active" data-sort="position" onclick="OP.setSort('position')">POSITION</button>
+        <button class="sort-btn" data-sort="bib" onclick="OP.setSort('bib')">BIB</button>
+        <button class="sort-btn" data-sort="pace" onclick="OP.setSort('pace')">PACE</button>
+        <button class="sort-btn" data-sort="eta" onclick="OP.setSort('eta')">ETA</button>
+        <button class="sort-btn" data-sort="name" onclick="OP.setSort('name')">NAME</button>
+        <button class="sort-btn" data-sort="heat" onclick="OP.setSort('heat')">HEAT</button>
+      </div>
+      <div class="lb-head">
+        <span>#</span><span>BIB</span><span>NAME</span><span>PROG</span><span>PACE</span><span>&#9889;</span>
+      </div>
+      <div id="leaderboard-body"></div>
     </div>
-    <div id="leaderboard-body"></div>
+    <!-- Stations pane -->
+    <div id="lp-stations" style="display:none;flex:1;overflow-y:auto">
+      <div id="station-list-body"></div>
+    </div>
   </div>
 
   <!-- MAP -->
@@ -228,6 +254,40 @@
     <div class="modal-footer">
       <button onclick="document.getElementById('edit-modal').classList.add('hidden')">CANCEL</button>
       <button class="primary" onclick="OP.saveParticipant()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Batch Check-In Modal -->
+<div class="modal-bg hidden" id="batch-checkin-modal">
+  <div class="modal">
+    <h2>CHECK-IN @ <span id="bc-station-name" style="color:var(--accent4)"></span></h2>
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-group">
+        <label>EVENT TYPE</label>
+        <select id="bc-event-type">
+          <option value="aid_arrive">Arrive</option>
+          <option value="aid_depart">Depart</option>
+          <option value="start">Start</option>
+          <option value="finish">Finish</option>
+          <option value="dnf">DNF</option>
+          <option value="dns">DNS</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>DEFAULT TIME (blank&nbsp;=&nbsp;now)</label>
+        <input id="bc-default-time" placeholder="HH:MM:SS">
+      </div>
+    </div>
+    <div class="bc-row-header">
+      <span>BIB</span><span>Name (auto)</span><span>Time override</span><span></span>
+    </div>
+    <div id="bc-rows"></div>
+    <button onclick="OP.addBatchRow()" style="margin-top:8px;font-size:13px">+ ADD ROW</button>
+    <div style="font-size:13px;color:var(--text3);margin-top:6px" id="bc-status"></div>
+    <div class="modal-footer">
+      <button onclick="OP.closeBatchCheckIn()">CANCEL</button>
+      <button class="primary" onclick="OP.submitBatchCheckIn()">SUBMIT ALL</button>
     </div>
   </div>
 </div>
