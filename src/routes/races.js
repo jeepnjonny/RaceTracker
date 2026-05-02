@@ -101,6 +101,20 @@ router.post('/:id/deactivate', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// Start a race — stamps current time on all tracker-less participants not yet started/finished
+router.post('/:id/start', requireRole('admin', 'operator'), (req, res) => {
+  const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);
+  if (!race) return res.status(404).json({ ok: false, error: 'Race not found' });
+  const now = Math.floor(Date.now() / 1000);
+  const info = db.prepare(`
+    UPDATE participants SET start_time=?, status='active'
+    WHERE race_id=? AND (tracker_id IS NULL OR tracker_id='') AND status NOT IN ('dnf','finished')
+  `).run(now, req.params.id);
+  logger.log('race', 'info', `START RACE — ${info.changes} tracker-less participant(s) started at ${new Date(now*1000).toTimeString().slice(0,8)}`);
+  wsManager.broadcast({ type: 'participant_update', data: { action: 'bulk_update' } });
+  res.json({ ok: true, started: info.changes });
+});
+
 // End/stop a race (operator or admin) — marks as past, broadcasts race_update
 router.post('/:id/end', requireRole('admin', 'operator'), (req, res) => {
   const race = db.prepare('SELECT * FROM races WHERE id=?').get(req.params.id);

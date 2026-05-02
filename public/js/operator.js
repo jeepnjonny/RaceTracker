@@ -71,14 +71,34 @@ function handleRaceUpdate(data) {
   race = data;
   updateStartWindowBtn();
   updateEndRaceBtn();
+  updateStartRaceBtn();
   tickClock(); // re-evaluate freeze immediately
 }
 
 function updateEndRaceBtn() {
   const btn = document.getElementById('end-race-btn');
   if (!btn) return;
-  const show = race && race.status === 'active';
-  btn.classList.toggle('hidden', !show);
+  btn.classList.toggle('hidden', !(race && race.status === 'active'));
+}
+
+function updateStartRaceBtn() {
+  const btn = document.getElementById('start-race-btn');
+  if (!btn) return;
+  const hasUnstarted = Object.values(participants).some(p =>
+    (!p.tracker_id) && !p.start_time && p.status !== 'dnf' && p.status !== 'finished'
+  );
+  btn.classList.toggle('hidden', !(race && race.status === 'active' && hasUnstarted));
+}
+
+async function startRace() {
+  if (!race) return;
+  const count = Object.values(participants).filter(p =>
+    (!p.tracker_id) && p.status !== 'dnf' && p.status !== 'finished'
+  ).length;
+  if (!confirm(`Set start time to NOW for ${count} tracker-less participant${count !== 1 ? 's' : ''}?`)) return;
+  const res = await RT.post(`/api/races/${race.id}/start`, {});
+  if (!res.ok) { RT.toast('Failed to start race', 'warn'); return; }
+  RT.toast(`Started ${res.started} participant${res.started !== 1 ? 's' : ''}`, 'ok');
 }
 
 function applyMessagingFlag() {
@@ -108,6 +128,7 @@ function handleInit(data) {
   applyWeatherFlag();
   updateStartWindowBtn();
   updateEndRaceBtn();
+  updateStartRaceBtn();
 
   heats = {}; (data.heats || []).forEach(h => heats[h.id] = h);
   classes = {}; (data.classes || []).forEach(c => classes[c.id] = c);
@@ -140,6 +161,7 @@ async function loadInitialData() {
   applyMessagingFlag();
   applyWeatherFlag();
   updateEndRaceBtn();
+  updateStartRaceBtn();
 
   const [pr, sr, hr, cr, personnelR, msgR] = await Promise.all([
     RT.get(`/api/races/${race.id}/participants`),
@@ -1257,6 +1279,7 @@ function handleParticipantUpdate(data) {
   }
   // Retick clock in case a status change causes the clock to freeze/unfreeze
   tickClock();
+  updateStartRaceBtn();
 }
 
 function handleStationUpdate(data) {
@@ -1837,5 +1860,6 @@ return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipa
          resolveBib, bibKeydown, submitBatchCheckIn,
          openEditEvent, saveEditEvent, deleteStationEvent,
          openPersonnelModal, renderPersonnelTable, editPersonnelRow, savePersonnelRow,
-         addPersonnel, deletePersonnel };
+         addPersonnel, deletePersonnel,
+         startRace };
 })();

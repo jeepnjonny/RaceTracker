@@ -2,6 +2,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const wsManager = require('../websocket');
 const router = express.Router({ mergeParams: true });
 
 router.get('/', requireAuth, (req, res) => {
@@ -24,6 +25,16 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
   const newStartTime = start_time !== undefined ? (start_time || null) : heat.start_time;
   db.prepare('UPDATE heats SET name=?, color=?, shape=?, start_time=? WHERE id=?')
     .run(name ?? heat.name, color ?? heat.color, shape ?? heat.shape, newStartTime, req.params.id);
+
+  // Propagate new start_time to tracker-less participants in this heat with no start_time set
+  if (newStartTime && newStartTime !== heat.start_time) {
+    db.prepare(`
+      UPDATE participants SET start_time=?
+      WHERE heat_id=? AND race_id=? AND (tracker_id IS NULL OR tracker_id='') AND (start_time IS NULL OR start_time=0)
+    `).run(newStartTime, req.params.id, req.params.raceId);
+    wsManager.broadcast({ type: 'participant_update', data: { action: 'bulk_update' } });
+  }
+
   res.json({ ok: true, data: db.prepare('SELECT * FROM heats WHERE id=?').get(req.params.id) });
 });
 

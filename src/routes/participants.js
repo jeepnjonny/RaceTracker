@@ -37,6 +37,18 @@ const mqttClient = require('../mqtt-client');
 const logger = require('../logger');
 const router = express.Router({ mergeParams: true });
 
+// ── Heat start-time propagation ───────────────────────────────────────────────
+function applyHeatStartTime(participantId) {
+  // If participant has no tracker and no start_time, copy start_time from their heat
+  const p = db.prepare('SELECT id, tracker_id, start_time, heat_id FROM participants WHERE id=?').get(participantId);
+  if (!p || p.tracker_id || p.start_time) return;
+  if (!p.heat_id) return;
+  const heat = db.prepare('SELECT start_time FROM heats WHERE id=?').get(p.heat_id);
+  if (heat?.start_time) {
+    db.prepare('UPDATE participants SET start_time=? WHERE id=?').run(heat.start_time, participantId);
+  }
+}
+
 // ── Datasource auto-detection ─────────────────────────────────────────────────
 function looksLikeMeshtastic(id) {
   // Meshtastic node IDs are 8 hex chars, optionally prefixed with !
@@ -120,6 +132,7 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
       VALUES (?,?,?,?,?,?,?,?,?)
     `).run(req.params.raceId, String(bib), name, tracker_id || null, heat_id || null,
            class_id || null, age || null, phone || null, emergency_contact || null);
+    applyHeatStartTime(result.lastInsertRowid);
     const p = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(result.lastInsertRowid));
     wsManager.broadcast({ type: 'participant_update', data: { action: 'add', participant: p } });
     aprsClient.notifyRosterChange();
@@ -187,6 +200,7 @@ router.put('/:id', requireRole('admin', 'operator'), (req, res) => {
     }
   }
 
+  if ('tracker_id' in updates || 'heat_id' in updates) applyHeatStartTime(p.id);
   const updated = enrichParticipant(db.prepare('SELECT * FROM participants WHERE id=?').get(p.id));
   wsManager.broadcast({ type: 'participant_update', data: { action: 'update', participant: updated } });
   aprsClient.notifyRosterChange();
