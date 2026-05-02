@@ -935,6 +935,101 @@ function formatEventType(t) {
            dnf:'DNF', dns:'DNS', off_course:'OFF COURSE', stopped:'STOPPED', manual:'NOTE' }[t] || t;
 }
 
+// ── Personnel Modal ───────────────────────────────────────────────────────────
+let personnelStationId = null;
+
+function openPersonnelModal(stationId) {
+  personnelStationId = stationId;
+  const s = stations.find(x => x.id === stationId);
+  document.getElementById('pm-station-name').textContent = s?.name || '';
+  document.getElementById('pm-new-name').value = '';
+  document.getElementById('pm-new-phone').value = '';
+  document.getElementById('pm-new-tracker').value = '';
+  document.getElementById('pm-status').textContent = '';
+  renderPersonnelTable();
+  document.getElementById('personnel-modal').classList.remove('hidden');
+}
+
+function renderPersonnelTable() {
+  const stPersonnel = personnel.filter(p => p.station_id === personnelStationId);
+  const body = document.getElementById('pm-body');
+  if (!body) return;
+  if (!stPersonnel.length) {
+    body.innerHTML = `<tr><td colspan="4" style="padding:10px 6px;color:var(--text3);text-align:center;font-size:14px">No personnel assigned to this station.</td></tr>`;
+    return;
+  }
+  body.innerHTML = stPersonnel.map(p => `
+    <tr id="pm-row-${p.id}" style="border-bottom:1px solid var(--border)">
+      <td style="padding:5px 6px">${p.name}</td>
+      <td style="padding:5px 6px;color:var(--text3)">${p.phone || '—'}</td>
+      <td style="padding:5px 6px;color:var(--text3)">${p.tracker_id || '—'}</td>
+      <td style="padding:5px 6px;white-space:nowrap">
+        <button style="font-size:11px;padding:1px 6px" onclick="OP.editPersonnelRow(${p.id})">EDIT</button>
+        <button style="font-size:11px;padding:1px 6px;color:var(--accent3);border-color:var(--accent3);margin-left:4px" onclick="OP.deletePersonnel(${p.id})">DEL</button>
+      </td>
+    </tr>`).join('');
+}
+
+function editPersonnelRow(id) {
+  const p = personnel.find(x => x.id === id);
+  if (!p) return;
+  const row = document.getElementById(`pm-row-${id}`);
+  if (!row) return;
+  row.innerHTML = `
+    <td style="padding:4px 4px"><input id="pm-edit-name-${id}" value="${p.name}" style="width:100%"></td>
+    <td style="padding:4px 4px"><input id="pm-edit-phone-${id}" value="${p.phone || ''}" placeholder="Phone" style="width:100%"></td>
+    <td style="padding:4px 4px"><input id="pm-edit-tracker-${id}" value="${p.tracker_id || ''}" placeholder="Tracker ID" style="width:100%"></td>
+    <td style="padding:4px 4px;white-space:nowrap">
+      <button class="primary" style="font-size:11px;padding:1px 6px" onclick="OP.savePersonnelRow(${id})">SAVE</button>
+      <button style="font-size:11px;padding:1px 6px;margin-left:4px" onclick="OP.renderPersonnelTable()">✕</button>
+    </td>`;
+  document.getElementById(`pm-edit-name-${id}`)?.focus();
+}
+
+async function savePersonnelRow(id) {
+  const name = document.getElementById(`pm-edit-name-${id}`)?.value?.trim();
+  const phone = document.getElementById(`pm-edit-phone-${id}`)?.value?.trim() || null;
+  const tracker_id = document.getElementById(`pm-edit-tracker-${id}`)?.value?.trim() || null;
+  if (!name) { RT.toast('Name required', 'warn'); return; }
+  const res = await RT.put(`/api/races/${race.id}/personnel/${id}`, { name, phone, tracker_id });
+  if (!res.ok) { RT.toast('Failed to save', 'warn'); return; }
+  const idx = personnel.findIndex(x => x.id === id);
+  if (idx >= 0) personnel[idx] = { ...personnel[idx], name, phone, tracker_id };
+  renderPersonnelTable();
+  renderStationList();
+  if (selectedStationId === personnelStationId) showStationInfo(personnelStationId);
+}
+
+async function addPersonnel() {
+  const name = document.getElementById('pm-new-name')?.value?.trim();
+  const phone = document.getElementById('pm-new-phone')?.value?.trim() || null;
+  const tracker_id = document.getElementById('pm-new-tracker')?.value?.trim() || null;
+  const status = document.getElementById('pm-status');
+  if (!name) { if (status) status.textContent = 'Name is required.'; return; }
+  if (status) status.textContent = '';
+  const res = await RT.post(`/api/races/${race.id}/personnel`, {
+    name, phone, tracker_id, station_id: personnelStationId
+  });
+  if (!res.ok) { if (status) status.textContent = 'Failed to add: ' + (res.error || 'unknown error'); return; }
+  personnel.push(res.data);
+  document.getElementById('pm-new-name').value = '';
+  document.getElementById('pm-new-phone').value = '';
+  document.getElementById('pm-new-tracker').value = '';
+  document.getElementById('pm-new-name').focus();
+  renderPersonnelTable();
+  renderStationList();
+  if (selectedStationId === personnelStationId) showStationInfo(personnelStationId);
+}
+
+async function deletePersonnel(id) {
+  const res = await RT.del(`/api/races/${race.id}/personnel/${id}`);
+  if (!res.ok) { RT.toast('Failed to delete', 'warn'); return; }
+  personnel = personnel.filter(x => x.id !== id);
+  renderPersonnelTable();
+  renderStationList();
+  if (selectedStationId === personnelStationId) showStationInfo(personnelStationId);
+}
+
 function showStationInfo(id) {
   clearInterval(lastSeenInterval);
   selectedStationId = id;
@@ -956,7 +1051,10 @@ function showStationInfo(id) {
         <button class="primary" style="margin-left:auto;font-size:13px;padding:3px 10px"
           onclick="OP.openBatchCheckIn(${id})">LOG CHECK-IN</button>
       </div>
-      <div style="font-size:13px;letter-spacing:2px;color:var(--text3);margin-bottom:6px">PERSONNEL (${stPersonnel.length})</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:13px;letter-spacing:2px;color:var(--text3)">PERSONNEL (${stPersonnel.length})</span>
+        <button style="font-size:11px;padding:1px 7px" onclick="OP.openPersonnelModal(${id})">EDIT</button>
+      </div>
       ${stPersonnel.length ? stPersonnel.map(p =>
         `<div class="list-row" style="cursor:default">
           <span>${p.name}</span>
@@ -1725,6 +1823,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.getElementById('edit-modal')?.classList.add('hidden');
     document.getElementById('viewer-link-modal')?.classList.add('hidden');
+    document.getElementById('personnel-modal')?.classList.add('hidden');
   }
 });
 
@@ -1736,5 +1835,7 @@ return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipa
          switchLeftTab, selectStation,
          openBatchCheckIn, closeBatchCheckIn, addBatchRow, removeBatchRow,
          resolveBib, bibKeydown, submitBatchCheckIn,
-         openEditEvent, saveEditEvent, deleteStationEvent };
+         openEditEvent, saveEditEvent, deleteStationEvent,
+         openPersonnelModal, renderPersonnelTable, editPersonnelRow, savePersonnelRow,
+         addPersonnel, deletePersonnel };
 })();

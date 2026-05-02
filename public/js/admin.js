@@ -1101,7 +1101,12 @@ function openParticipantModal(id) {
   editingParticipantId = id || null;
   const p = id ? participants.find(x => x.id === id) : null;
   document.getElementById('pm2-title').textContent = id ? 'EDIT PARTICIPANT' : 'NEW PARTICIPANT';
-  document.getElementById('pm2-bib').value               = p?.bib || '';
+  // Auto-populate next sequential bib when adding a new participant
+  const nextBib = id ? (p?.bib || '') : (() => {
+    const bibs = participants.map(x => parseInt(x.bib)).filter(n => !isNaN(n));
+    return bibs.length ? (Math.max(...bibs) + 1).toString() : '1';
+  })();
+  document.getElementById('pm2-bib').value               = nextBib;
   document.getElementById('pm2-name').value              = p?.name || '';
   document.getElementById('pm2-tracker').value           = p?.tracker_id || '';
   document.getElementById('pm2-age').value               = p?.age || '';

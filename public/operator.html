@@ -320,6 +320,38 @@
   </div>
 </div>
 
+<!-- Personnel Modal -->
+<div class="modal-bg hidden" id="personnel-modal">
+  <div class="modal" style="max-width:560px">
+    <h2>PERSONNEL @ <span id="pm-station-name" style="color:var(--accent4)"></span></h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:4px 6px;font-size:11px;letter-spacing:1px;color:var(--text3);border-bottom:1px solid var(--border)">NAME</th>
+          <th style="text-align:left;padding:4px 6px;font-size:11px;letter-spacing:1px;color:var(--text3);border-bottom:1px solid var(--border)">PHONE</th>
+          <th style="text-align:left;padding:4px 6px;font-size:11px;letter-spacing:1px;color:var(--text3);border-bottom:1px solid var(--border)">TRACKER</th>
+          <th style="border-bottom:1px solid var(--border)"></th>
+        </tr>
+      </thead>
+      <tbody id="pm-body"></tbody>
+      <tfoot>
+        <tr>
+          <td style="padding:6px 4px"><input id="pm-new-name" placeholder="Name" style="width:100%"></td>
+          <td style="padding:6px 4px"><input id="pm-new-phone" placeholder="Phone" style="width:100%"></td>
+          <td style="padding:6px 4px"><input id="pm-new-tracker" placeholder="Tracker ID" style="width:100%"></td>
+          <td style="padding:6px 4px;white-space:nowrap">
+            <button class="primary" onclick="OP.addPersonnel()" style="font-size:12px;padding:3px 9px">ADD</button>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+    <div id="pm-status" style="font-size:13px;color:var(--accent3);margin-top:6px;min-height:18px"></div>
+    <div class="modal-footer">
+      <button onclick="document.getElementById('personnel-modal').classList.add('hidden')">CLOSE</button>
+    </div>
+  </div>
+</div>
+
 <!-- Viewer link modal -->
 <div class="modal-bg hidden" id="viewer-link-modal">
   <div class="modal" style="max-width:300px;text-align:center">
