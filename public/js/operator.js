@@ -644,7 +644,6 @@ async function saveEditEvent() {
 }
 
 async function deleteStationEvent(eventId, stationId) {
-  if (!confirm('Delete this event entry?')) return;
   const res = await RT.del(`/api/races/${race.id}/events/${eventId}`);
   if (!res.ok) { RT.toast('Failed to delete', 'warn'); return; }
   RT.toast('Deleted', 'ok');
