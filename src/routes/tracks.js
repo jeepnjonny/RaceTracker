@@ -56,18 +56,25 @@ function parseKML(text) {
   return { paths, points };
 }
 
+function extractGpxPt(inner, lat, lon) {
+  const eleMatch = inner && inner.match(/<ele>([\d.+eE-]+)<\/ele>/);
+  const pt = [parseFloat(lat), parseFloat(lon)];
+  if (eleMatch) pt.push(parseFloat(eleMatch[1]));
+  return pt;
+}
+
 function parseGPX(text) {
   const trkPoints = [];
-  const trkptRe = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"/gi;
+  const trkptRe = /<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"[^>]*>([\s\S]*?)<\/trkpt>/gi;
   let m;
   while ((m = trkptRe.exec(text)) !== null) {
-    trkPoints.push([parseFloat(m[1]), parseFloat(m[2])]);
+    trkPoints.push(extractGpxPt(m[3], m[1], m[2]));
   }
   if (trkPoints.length >= 2) return [{ name: 'GPX Track', points: trkPoints }];
-  const rteptRe = /<rtept\s+lat="([^"]+)"\s+lon="([^"]+)"/gi;
+  const rteptRe = /<rtept\s+lat="([^"]+)"\s+lon="([^"]+)"[^>]*>([\s\S]*?)<\/rtept>/gi;
   const rtePoints = [];
   while ((m = rteptRe.exec(text)) !== null) {
-    rtePoints.push([parseFloat(m[1]), parseFloat(m[2])]);
+    rtePoints.push(extractGpxPt(m[3], m[1], m[2]));
   }
   return rtePoints.length >= 2 ? [{ name: 'GPX Route', points: rtePoints }] : [];
 }

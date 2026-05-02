@@ -533,6 +533,25 @@ function ensureDistCache() {
   _cachedTotalDist = _cachedDists[_cachedDists.length - 1];
 }
 
+function getStationElevation(station) {
+  if (!trackPoints || !station.lat || !station.lon) return null;
+  let minD = Infinity, bestEle = null;
+  for (const pt of trackPoints) {
+    if (pt[2] == null) continue;
+    const d = haversine(station.lat, station.lon, pt[0], pt[1]);
+    if (d < minD) { minD = d; bestEle = pt[2]; }
+  }
+  return bestEle;
+}
+
+function fmtElevation(meters) {
+  if (meters == null) return null;
+  const useImperial = !race?.speed_units || race.speed_units === 'min_mile' || race.speed_units === 'mph';
+  return useImperial
+    ? `${Math.round(meters * 3.28084).toLocaleString()} ft`
+    : `${Math.round(meters)} m`;
+}
+
 function getStationAlongMap() {
   if (_stationAlongCache) return _stationAlongCache;
   if (!trackPoints || trackPoints.length < 2) return new Map();
@@ -1064,14 +1083,30 @@ function showStationInfo(id) {
   RT.get(`/api/races/${race.id}/events?station_id=${id}&limit=50`).then(res => {
     const events = res.ok ? res.data : [];
     const stPersonnel = personnel.filter(p => p.station_id === id);
+
+    // Course position stats
+    const alongMap = getStationAlongMap();
+    const along = alongMap.get(id);
+    const totalDist = computeTotalDist();
+    const distStr  = along != null ? RT.fmtDist(along) : null;
+    const pctStr   = (along != null && totalDist > 0) ? `${(along / totalDist * 100).toFixed(1)}%` : null;
+    const elevStr  = fmtElevation(getStationElevation(s));
+    const coordStr = (s.lat && s.lon) ? `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}` : null;
+
     const el = document.getElementById('info-panel');
     el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
         <span style="font-size:18px;font-weight:bold;color:var(--accent4)">${s.name}</span>
         <span class="badge" style="color:var(--accent4)">${s.type.toUpperCase()}</span>
         ${s.cutoff_time ? `<span class="text-dim" style="font-size:14px">Cutoff: ${s.cutoff_time}</span>` : ''}
         <button class="primary" style="margin-left:auto;font-size:13px;padding:3px 10px"
           onclick="OP.openBatchCheckIn(${id})">LOG CHECK-IN</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin-bottom:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px">
+        ${distStr  ? `<div><div style="font-size:11px;letter-spacing:1px;color:var(--text3)">DIST</div><div style="font-size:15px;color:var(--text)">${distStr}</div></div>` : ''}
+        ${pctStr   ? `<div><div style="font-size:11px;letter-spacing:1px;color:var(--text3)">COURSE</div><div style="font-size:15px;color:var(--accent2)">${pctStr}</div></div>` : ''}
+        ${elevStr  ? `<div><div style="font-size:11px;letter-spacing:1px;color:var(--text3)">ELEV</div><div style="font-size:15px;color:var(--text)">${elevStr}</div></div>` : ''}
+        ${coordStr ? `<div style="grid-column:1/-1"><div style="font-size:11px;letter-spacing:1px;color:var(--text3)">COORDS</div><div style="font-size:13px;color:var(--text3);font-family:monospace">${coordStr}</div></div>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="font-size:13px;letter-spacing:2px;color:var(--text3)">PERSONNEL (${stPersonnel.length})</span>
