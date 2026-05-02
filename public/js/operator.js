@@ -1907,7 +1907,7 @@ return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipa
          toggleStartWindow, endRace,
          switchLeftTab, selectStation,
          openBatchCheckIn, closeBatchCheckIn, addBatchRow, removeBatchRow,
-         resolveBib, bibKeydown, submitBatchCheckIn,
+         resolveBib, bibKeydown, timeKeydown, submitBatchCheckIn,
          openEditEvent, saveEditEvent, deleteStationEvent,
          openPersonnelModal, renderPersonnelTable, editPersonnelRow, savePersonnelRow,
          addPersonnel, deletePersonnel,
