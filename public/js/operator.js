@@ -1012,10 +1012,15 @@ async function saveParticipant() {
 }
 
 function parseTimeToUnix(str, dateStr) {
-  // Parse HH:MM:SS or HH:MM anchored to dateStr (YYYY-MM-DD) or today if omitted
+  // Accepts HH:MM:SS, HH:MM, HHMM, or HHMMSS (colons optional)
   const base = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
-  const parts = str.split(':').map(Number);
-  base.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+  const s = str.trim().replace(/:/g, '');
+  let h = 0, m = 0, sec = 0;
+  if (s.length <= 2)      { h = +s; }
+  else if (s.length <= 4) { h = +s.slice(0,2); m = +s.slice(2); }
+  else                    { h = +s.slice(0,2); m = +s.slice(2,4); sec = +s.slice(4,6); }
+  if ([h,m,sec].some(isNaN)) return null;
+  base.setHours(h, m, sec, 0);
   return Math.floor(base.getTime() / 1000);
 }
 
