@@ -1006,7 +1006,36 @@ function openPersonnelModal(stationId) {
   document.getElementById('personnel-modal').classList.remove('hidden');
 }
 
+function populateAssignDropdown() {
+  const sel = document.getElementById('pm-assign-sel');
+  if (!sel) return;
+  const others = personnel.filter(p => p.station_id !== personnelStationId);
+  if (!others.length) {
+    sel.innerHTML = '<option value="">— No other personnel —</option>';
+    return;
+  }
+  sel.innerHTML = others.map(p => {
+    const stn = stations.find(s => s.id === p.station_id);
+    const assignment = stn ? stn.name : 'Unassigned';
+    return `<option value="${p.id}">${p.name} (${assignment})</option>`;
+  }).join('');
+}
+
+async function assignPersonnel() {
+  const sel = document.getElementById('pm-assign-sel');
+  const id = parseInt(sel?.value);
+  if (!id) return;
+  const res = await RT.put(`/api/races/${race.id}/personnel/${id}`, { station_id: personnelStationId });
+  if (!res.ok) { RT.toast('Failed to assign', 'warn'); return; }
+  const idx = personnel.findIndex(x => x.id === id);
+  if (idx !== -1) personnel[idx] = res.data;
+  renderPersonnelTable();
+  populateAssignDropdown();
+  renderStationList();
+}
+
 function renderPersonnelTable() {
+  populateAssignDropdown();
   const stPersonnel = personnel.filter(p => p.station_id === personnelStationId);
   const body = document.getElementById('pm-body');
   if (!body) return;
@@ -1910,6 +1939,6 @@ return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipa
          resolveBib, bibKeydown, timeKeydown, submitBatchCheckIn,
          openEditEvent, saveEditEvent, deleteStationEvent,
          openPersonnelModal, renderPersonnelTable, editPersonnelRow, savePersonnelRow,
-         addPersonnel, deletePersonnel,
+         addPersonnel, deletePersonnel, assignPersonnel,
          startRace };
 })();
