@@ -298,33 +298,45 @@ function enrichParticipant(p, registry) {
 function renderAllMarkers() {
   markerLayer.clearLayers();
   for (const p of Object.values(participants)) {
-    if (p.last_lat && p.last_lon) updateOrCreateMarker(p);
+    updateOrCreateMarker(p); // handles both GPS and manual-station fallback internally
   }
 }
 
 function updateOrCreateMarker(p) {
-  if (!p.last_lat || !p.last_lon) return;
+  // Prefer live GPS; fall back to last confirmed station location
+  let lat = p.last_lat, lon = p.last_lon;
+  let isManual = false;
+  if (!lat || !lon) {
+    const fix = getManualFix(p);
+    if (!fix?.lat || !fix?.lon) return;
+    lat = fix.lat; lon = fix.lon;
+    isManual = true;
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const missingTimer = race?.missing_timer || 3600;
-  const lastSeen = p.registry?.last_seen || p.last_seen || 0;
-  const missing = lastSeen && (now - lastSeen) > missingTimer;
+  // For manual markers, age is from last station timestamp; no blinking unless stale
+  const lastSeen = isManual ? (p.last_station_ts || 0) : (p.registry?.last_seen || p.last_seen || 0);
+  const missing = !isManual && lastSeen && (now - lastSeen) > missingTimer;
   const alerting = alerts.some(a => a.participantId === p.id);
   const heat = p.heat_id ? heats[p.heat_id] : null;
   const { svg, cls } = RT.trackerIcon(heat, alerting, missing);
 
+  // Manual markers rendered with reduced opacity and a dashed ring to signal "last known"
+  const wrapStyle = isManual ? 'opacity:0.65;filter:grayscale(30%)' : '';
   const icon = L.divIcon({
-    html: `<div class="${cls}" title="Bib ${p.bib}: ${p.name}">${svg}</div>`,
+    html: `<div class="${cls}" style="${wrapStyle}" title="Bib ${p.bib}: ${p.name} (last known station)">${svg}</div>`,
     className: 'leaflet-div-icon', iconAnchor: [10, 10],
   });
 
   const existing = markerLayer.getLayers().find(m => m._pid === p.id);
   if (existing) {
-    existing.setLatLng([p.last_lat, p.last_lon]);
+    existing.setLatLng([lat, lon]);
     existing.setIcon(icon);
   } else {
-    const m = L.marker([p.last_lat, p.last_lon], { icon });
+    const m = L.marker([lat, lon], { icon });
     m._pid = p.id;
-    m.bindTooltip(`#${p.bib} ${p.name}`, { permanent: false });
+    m.bindTooltip(`#${p.bib} ${p.name}${isManual ? ' (last station)' : ''}`, { permanent: false });
     m.on('click', () => showParticipantInfo(p.id));
     m.addTo(markerLayer);
   }
@@ -381,7 +393,27 @@ const STATUS_COLORS = { dns: '#484f58', active: '#58a6ff', dnf: '#f78166', finis
 function computePercent(p) {
   if (p.status === 'finished') return 100;
   if (p.status === 'dns') return null;
-  if (!p.last_lat || !p.last_lon || !trackPoints || !trackPoints.length) return null;
+
+  // Manual-entry fallback: no GPS but last station known
+  if (!p.last_lat || !p.last_lon) {
+    if (!trackPoints || !trackPoints.length) return null;
+    const fix = getManualFix(p);
+    if (!fix) return null;
+    ensureDistCache();
+    const totalDist = _cachedTotalDist;
+    if (!totalDist) return null;
+    const isOAB = race?.race_format === 'out_and_back';
+    // Set _lastAlong so computeETAs can use it
+    p._lastAlong    = fix.along;
+    p._lastAlongTs  = fix.ts;
+    if (isOAB) {
+      if (p.has_turnaround) return Math.min(100, (2 * totalDist - fix.along) / (2 * totalDist) * 100);
+      return Math.min(50, fix.along / (2 * totalDist) * 100);
+    }
+    return Math.min(100, fix.along / totalDist * 100);
+  }
+
+  if (!trackPoints || !trackPoints.length) return null;
   ensureDistCache();
   const totalDist = _cachedTotalDist;
   if (totalDist === 0) return 0;
@@ -419,16 +451,44 @@ function computePercent(p) {
   return Math.min(100, bestAlong / totalDist * 100);
 }
 
+// Returns the last manually-confirmed station fix for a participant, or null.
+// Resolves station → {along, lat, lon, ts} lazily (needs trackPoints + stations ready).
+function getManualFix(p) {
+  if (!p.last_station_id || !p.last_station_ts) return null;
+  const along = getStationAlongMap().get(p.last_station_id);
+  if (along == null) return null;
+  const stn = stations.find(s => s.id === p.last_station_id);
+  return { along, ts: p.last_station_ts, lat: stn?.lat, lon: stn?.lon, station: stn };
+}
+
 function computePace(p) {
-  if (!p.start_time || !p.last_lat) return null;
-  const pct = p._pct;
-  if (pct == null || !trackPoints) return null;
-  const elapsed = Math.floor(Date.now() / 1000) - p.start_time;
+  if (!p.start_time) return null;
+
+  if (p.last_lat) {
+    // GPS path
+    const pct = p._pct;
+    if (pct == null || !trackPoints) return null;
+    const elapsed = Math.floor(Date.now() / 1000) - p.start_time;
+    if (elapsed <= 0) return null;
+    let totalDist = computeTotalDist();
+    if (!totalDist) return null;
+    if (race?.race_format === 'out_and_back') totalDist *= 2;
+    return (pct / 100 * totalDist) / elapsed; // m/s
+  }
+
+  // Manual-entry fallback: pace from start_time to last confirmed station
+  const fix = getManualFix(p);
+  if (!fix || fix.along <= 0) return null;
+  const elapsed = fix.ts - p.start_time;
   if (elapsed <= 0) return null;
-  let totalDist = computeTotalDist();
+  const isOAB = race?.race_format === 'out_and_back';
+  const totalDist = computeTotalDist();
   if (!totalDist) return null;
-  if (race?.race_format === 'out_and_back') totalDist *= 2;
-  return (pct / 100 * totalDist) / elapsed; // m/s
+  // Distance covered: on return leg account for the turnaround leg too
+  const distCovered = (isOAB && p.has_turnaround)
+    ? 2 * totalDist - fix.along
+    : fix.along;
+  return distCovered / elapsed; // m/s
 }
 
 let _cachedTotalDist = null, _cachedDists = null, _stationAlongCache = null;
@@ -498,9 +558,14 @@ function selectParticipant(id) {
   renderLeaderboard();
   showParticipantInfo(id);
   switchRightTab('info');
-  // Pan map to marker
+  // Pan map to marker — GPS first, then last known station
   const p = participants[id];
-  if (p?.last_lat && p?.last_lon) leafletMap.panTo([p.last_lat, p.last_lon]);
+  if (p?.last_lat && p?.last_lon) {
+    leafletMap.panTo([p.last_lat, p.last_lon]);
+  } else {
+    const fix = getManualFix(p);
+    if (fix?.lat && fix?.lon) leafletMap.panTo([fix.lat, fix.lon]);
+  }
 }
 
 function computeETAs(pid) {
@@ -774,9 +839,15 @@ function handleEvent(data) {
       const td = _cachedTotalDist || computeTotalDist();
       if (td) { p._lastAlong = td; p._lastAlongTs = data.timestamp; }
     }
-    if (data.station_id && !p.has_turnaround) {
+    if (data.station_id) {
       const along = getStationAlongMap().get(data.station_id);
-      if (along != null) p._stationFloor = Math.max(p._stationFloor ?? 0, along);
+      if (along != null) {
+        // Always track the most recent confirmed station for manual-entry pace/position
+        p.last_station_id = data.station_id;
+        p.last_station_ts = data.timestamp;
+        // Advance GPS checkpoint floor (outbound only — prevents backward GPS jumps)
+        if (!p.has_turnaround) p._stationFloor = Math.max(p._stationFloor ?? 0, along);
+      }
     }
     if (pid === selectedPId) showParticipantInfo(pid);
     renderLeaderboard();
