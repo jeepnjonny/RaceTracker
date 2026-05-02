@@ -24,7 +24,7 @@ const GLOBAL_TABS = [
   { id: 'races',    label: 'RACES' },
   { id: 'infra',    label: 'INFRASTRUCTURE' },
   { id: 'users',    label: 'USERS' },
-  { id: 'settings', label: 'SETTINGS' },
+  { id: 'settings', label: 'DATASOURCES' },
   { id: 'logs',     label: 'LOGS' },
 ];
 const RACE_TABS = [
