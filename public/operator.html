@@ -258,6 +258,34 @@
   </div>
 </div>
 
+<!-- Edit Event Modal -->
+<div class="modal-bg hidden" id="edit-event-modal">
+  <div class="modal" style="max-width:360px">
+    <h2>EDIT EVENT</h2>
+    <div class="form-group"><label>EVENT TYPE</label>
+      <select id="ee-event-type">
+        <option value="start">Start</option>
+        <option value="aid_arrive">Arrive</option>
+        <option value="aid_depart">Depart</option>
+        <option value="finish">Finish</option>
+        <option value="dnf">DNF</option>
+        <option value="dns">DNS</option>
+        <option value="manual">Note</option>
+      </select>
+    </div>
+    <div class="form-group"><label>TIME</label>
+      <input id="ee-time" placeholder="HH:MM:SS">
+    </div>
+    <div class="form-group"><label>NOTES</label>
+      <input id="ee-notes" placeholder="Optional">
+    </div>
+    <div class="modal-footer">
+      <button onclick="document.getElementById('edit-event-modal').classList.add('hidden')">CANCEL</button>
+      <button class="primary" onclick="OP.saveEditEvent()">SAVE</button>
+    </div>
+  </div>
+</div>
+
 <!-- Batch Check-In Modal -->
 <div class="modal-bg hidden" id="batch-checkin-modal">
   <div class="modal">

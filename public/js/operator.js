@@ -594,8 +594,6 @@ function renderStationList() {
           <div style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
           <div style="font-size:12px;color:var(--text3)">${stnLabel(s.type)}${stPersonnel.length ? ` · ${stPersonnel.length} staff` : ''}</div>
         </div>
-        <button class="primary" style="font-size:12px;padding:2px 7px;flex-shrink:0"
-          onclick="event.stopPropagation();OP.openBatchCheckIn(${s.id})">LOG</button>
       </div>`;
     }).join('');
 }
@@ -610,6 +608,47 @@ function selectStation(id) {
   // Pan map to station
   const s = stations.find(x => x.id === id);
   if (s?.lat && s?.lon) leafletMap.panTo([s.lat, s.lon]);
+}
+
+// ── Station event edit / delete ───────────────────────────────────────────────
+let editingEventId = null, editingEventStationId = null;
+
+function openEditEvent(eventId, stationId) {
+  editingEventId = eventId;
+  editingEventStationId = stationId;
+  // Fetch the event to pre-populate fields
+  RT.get(`/api/races/${race.id}/events?station_id=${stationId}&limit=200`).then(res => {
+    const e = res.ok ? res.data.find(x => x.id === eventId) : null;
+    if (!e) { RT.toast('Event not found', 'warn'); return; }
+    document.getElementById('ee-event-type').value = e.event_type || 'aid_depart';
+    document.getElementById('ee-time').value        = e.timestamp
+      ? new Date(e.timestamp * 1000).toTimeString().slice(0, 8) : '';
+    document.getElementById('ee-notes').value       = e.notes || '';
+    document.getElementById('edit-event-modal').classList.remove('hidden');
+  });
+}
+
+async function saveEditEvent() {
+  if (!editingEventId || !race) return;
+  const eventType = document.getElementById('ee-event-type').value;
+  const timeStr   = document.getElementById('ee-time').value.trim();
+  const notes     = document.getElementById('ee-notes').value.trim();
+  const ts = timeStr ? parseTimeToUnix(timeStr, race.date) : null;
+  const body = { event_type: eventType, notes: notes || null };
+  if (ts) body.timestamp = ts;
+  const res = await RT.put(`/api/races/${race.id}/events/${editingEventId}`, body);
+  if (!res.ok) { RT.toast('Failed to save', 'warn'); return; }
+  document.getElementById('edit-event-modal').classList.add('hidden');
+  RT.toast('Event updated', 'ok');
+  showStationInfo(editingEventStationId);
+}
+
+async function deleteStationEvent(eventId, stationId) {
+  if (!confirm('Delete this event entry?')) return;
+  const res = await RT.del(`/api/races/${race.id}/events/${eventId}`);
+  if (!res.ok) { RT.toast('Failed to delete', 'warn'); return; }
+  RT.toast('Deleted', 'ok');
+  showStationInfo(stationId);
 }
 
 // ── Batch check-in modal ──────────────────────────────────────────────────────
@@ -931,11 +970,15 @@ function showStationInfo(id) {
       </div>
       <div id="station-event-log">
       ${events.length === 0 ? '<div class="text-dim" style="font-size:14px">No events yet.</div>' :
-        events.map(e => `<div class="log-entry">
-          <span class="log-time">${RT.fmtTime(e.timestamp, fmt24)}</span>
-          <span class="log-msg ${e.event_type==='aid_arrive'||e.event_type==='start'?'log-info':''}">
+        events.map(e => `<div class="log-entry" style="display:flex;align-items:center;gap:6px">
+          <span class="log-time" style="flex-shrink:0">${RT.fmtTime(e.timestamp, fmt24)}</span>
+          <span class="log-msg ${e.event_type==='aid_arrive'||e.event_type==='start'?'log-info':''}" style="flex:1">
             ${e.participant_name ? `#${e.bib} ${e.participant_name}` : '?'} — ${formatEventType(e.event_type)}
           </span>
+          <button style="font-size:11px;padding:1px 6px;flex-shrink:0"
+            onclick="OP.openEditEvent(${e.id},${id})">EDIT</button>
+          <button style="font-size:11px;padding:1px 6px;flex-shrink:0;color:var(--accent3);border-color:var(--accent3)"
+            onclick="OP.deleteStationEvent(${e.id},${id})">DEL</button>
         </div>`).join('')}
       </div>`;
   });
@@ -1693,5 +1736,6 @@ return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipa
          toggleStartWindow, endRace,
          switchLeftTab, selectStation,
          openBatchCheckIn, closeBatchCheckIn, addBatchRow, removeBatchRow,
-         resolveBib, bibKeydown, submitBatchCheckIn };
+         resolveBib, bibKeydown, submitBatchCheckIn,
+         openEditEvent, saveEditEvent, deleteStationEvent };
 })();
