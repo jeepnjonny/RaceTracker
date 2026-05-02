@@ -227,6 +227,41 @@ async function cloneRace(id) {
   else RT.toast(res.error, 'warn');
 }
 
+// ── Race Modal distance-unit helpers ──────────────────────────────────────────
+let _raceModalDistUnit = 'us';
+
+const DIST_FIELDS = [
+  { id: 'rm-geofence',          unitId: 'rm-geofence-unit' },
+  { id: 'rm-checkpoint-radius', unitId: 'rm-checkpoint-unit' },
+  { id: 'rm-start-clearance',   unitId: 'rm-clearance-unit' },
+  { id: 'rm-off-course',        unitId: 'rm-off-course-unit' },
+];
+
+function _mToDisplay(m, units) {
+  return units === 'us' ? Math.round(m * 3.28084) : Math.round(m);
+}
+function _displayToM(v, units) {
+  return units === 'us' ? Math.round(v / 3.28084) : Math.round(v);
+}
+function _applyDistUnit(units) {
+  const label = units === 'us' ? 'ft' : 'm';
+  for (const f of DIST_FIELDS) {
+    document.getElementById(f.unitId).textContent = label;
+  }
+  _raceModalDistUnit = units;
+}
+
+function rmOnUnitsChange() {
+  const newUnits = document.getElementById('rm-units').value;
+  if (newUnits === _raceModalDistUnit) return;
+  for (const f of DIST_FIELDS) {
+    const el = document.getElementById(f.id);
+    const meters = _displayToM(parseFloat(el.value) || 0, _raceModalDistUnit);
+    el.value = _mToDisplay(meters, newUnits);
+  }
+  _applyDistUnit(newUnits);
+}
+
 // ── Race Modal ────────────────────────────────────────────────────────────────
 async function openRaceModal(id) {
   editingRaceId = id || null;
@@ -237,11 +272,13 @@ async function openRaceModal(id) {
   document.getElementById('rm-time-format').value    = race?.time_format || '24h';
   document.getElementById('rm-clock-seconds').value  = String(race?.clock_seconds ?? 1);
   document.getElementById('rm-missing-timer').value  = Math.round((race?.missing_timer || 3600) / 60);
-  document.getElementById('rm-geofence').value            = race?.geofence_radius || 15;
-  document.getElementById('rm-checkpoint-radius').value   = race?.checkpoint_radius || 50;
-  document.getElementById('rm-units').value                = race?.units || 'us';
+  const modalUnits = race?.units || 'us';
+  document.getElementById('rm-units').value                = modalUnits;
   document.getElementById('rm-speed-display').value       = race?.speed_display || 'pace';
-  document.getElementById('rm-off-course').value     = race?.off_course_distance || 100;
+  _applyDistUnit(modalUnits);
+  document.getElementById('rm-geofence').value            = _mToDisplay(race?.geofence_radius || 15, modalUnits);
+  document.getElementById('rm-checkpoint-radius').value   = _mToDisplay(race?.checkpoint_radius || 50, modalUnits);
+  document.getElementById('rm-off-course').value     = _mToDisplay(race?.off_course_distance || 100, modalUnits);
   document.getElementById('rm-stopped').value        = Math.round((race?.stopped_time || 600) / 60);
   document.getElementById('rm-feat-missing').checked    = !!(race?.feat_missing   ?? 1);
   document.getElementById('rm-feat-auto-log').checked   = !!(race?.feat_auto_log  ?? 1);
@@ -254,7 +291,7 @@ async function openRaceModal(id) {
   document.getElementById('rm-weather').checked      = !!(race?.weather_enabled);
   document.getElementById('rm-race-format').value    = race?.race_format || 'point_to_point';
   document.getElementById('rm-start-time').value      = unixToTimeStr(race?.start_time);
-  document.getElementById('rm-start-clearance').value  = race?.start_clearance ?? 400;
+  document.getElementById('rm-start-clearance').value  = _mToDisplay(race?.start_clearance ?? 400, modalUnits);
   // Populate datasource enable checkboxes from global settings
   const sRes = await RT.get('/api/settings');
   const settings = sRes.ok ? sRes.data : {};
@@ -276,11 +313,11 @@ async function saveRace() {
     time_format:         document.getElementById('rm-time-format').value,
     clock_seconds:       parseInt(document.getElementById('rm-clock-seconds').value),
     missing_timer:       parseInt(document.getElementById('rm-missing-timer').value) * 60,
-    geofence_radius:     parseInt(document.getElementById('rm-geofence').value),
-    checkpoint_radius:   parseInt(document.getElementById('rm-checkpoint-radius').value),
+    geofence_radius:     _displayToM(parseInt(document.getElementById('rm-geofence').value), _raceModalDistUnit),
+    checkpoint_radius:   _displayToM(parseInt(document.getElementById('rm-checkpoint-radius').value), _raceModalDistUnit),
     units:               document.getElementById('rm-units').value,
     speed_display:       document.getElementById('rm-speed-display').value,
-    off_course_distance: parseInt(document.getElementById('rm-off-course').value),
+    off_course_distance: _displayToM(parseInt(document.getElementById('rm-off-course').value), _raceModalDistUnit),
     stopped_time:        parseInt(document.getElementById('rm-stopped').value) * 60,
     feat_missing:        document.getElementById('rm-feat-missing').checked    ? 1 : 0,
     feat_auto_log:       document.getElementById('rm-feat-auto-log').checked   ? 1 : 0,
@@ -294,7 +331,7 @@ async function saveRace() {
     course_id:           courseVal ? parseInt(courseVal) : null,
     race_format:         document.getElementById('rm-race-format').value,
     start_time:          parseTimeToUnix(document.getElementById('rm-start-time').value, document.getElementById('rm-date').value) ?? null,
-    start_clearance:     parseInt(document.getElementById('rm-start-clearance').value) || 400,
+    start_clearance:     _displayToM(parseInt(document.getElementById('rm-start-clearance').value) || 0, _raceModalDistUnit) || 400,
   };
   if (!body.name || !body.date) { RT.toast('Name and date required', 'warn'); return; }
   const res = editingRaceId
