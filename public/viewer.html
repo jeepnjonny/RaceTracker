@@ -15,15 +15,32 @@
   /* ── Topbar ── */
   #viewer-topbar {
     background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 6px 10px; display: flex; align-items: center; gap: 8px;
-    flex-shrink: 0; flex-wrap: nowrap; min-width: 0;
+    padding: 6px 10px; display: flex; flex-direction: column;
+    gap: 4px; flex-shrink: 0;
+  }
+  #vt-row-name {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
   }
   #viewer-topbar h1 {
     font-size: 17px; font-weight: bold; letter-spacing: 2px;
     color: var(--accent); white-space: nowrap; flex-shrink: 0;
   }
   #vw-race-pill { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
-  #vw-clock { font-size: 22px; font-weight: bold; color: var(--accent2); letter-spacing: 2px; margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+  #vt-row-clock { display: flex; justify-content: center; }
+  #vw-clock { font-size: 26px; font-weight: bold; color: var(--accent2); letter-spacing: 3px; white-space: nowrap; }
+  #vt-row-controls { display: flex; align-items: center; gap: 8px; }
+  #vt-row-controls select { flex: 1; font-size: 14px; padding: 4px 6px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-family: var(--font); }
+  #vt-row-controls #view-toggle { margin-left: auto; }
+
+  @media (min-width: 701px) {
+    #viewer-topbar { flex-direction: row; align-items: center; padding: 6px 10px; gap: 8px; }
+    #vt-row-name { flex: 1; }
+    #vt-row-clock { justify-content: unset; margin-left: auto; }
+    #vw-clock { font-size: 22px; letter-spacing: 2px; }
+    #vt-row-controls { gap: 8px; }
+    #vt-row-controls #view-toggle { margin-left: 0; }
+    #vt-row-controls select { flex: unset; max-width: 90px; }
+  }
 
   /* ── Main layout ── */
   #viewer-main { display: flex; flex: 1; overflow: hidden; min-width: 0; }
@@ -55,16 +72,19 @@
   .v-lb-row.alert-row { animation: blink 1.2s infinite; }
 
   /* ── Mobile: stack map & leaderboard ── */
-  #view-toggle { display: none; }
+  #view-toggle { display: flex; }
+
+  @media (min-width: 701px) {
+    #viewer-lb-wrap { display: flex !important; }
+    #view-toggle { display: none; }
+    #viewer-topbar h1 { display: block; }
+  }
 
   @media (max-width: 700px) {
     #viewer-topbar h1 { display: none; }
-    #vw-clock { font-size: 17px; letter-spacing: 1px; }
     #viewer-lb-wrap { display: none; width: 100%; border-left: none; flex-shrink: unset; }
-    #view-toggle { display: flex; }
     body.lb-mode #viewer-map-wrap { display: none; }
     body.lb-mode #viewer-lb-wrap { display: flex; width: 100%; }
-    /* Narrower columns on small screens */
     .v-lb-cols { grid-template-columns: 18px 24px 1fr 38px 42px 60px; }
     .v-lb-row, .v-lb-head { padding: 4px 6px; font-size: 14px; gap: 3px; }
   }
@@ -91,17 +111,23 @@
 </head>
 <body>
 <div id="viewer-topbar">
-  <h1>&#9654; RaceTracker</h1>
-  <div class="pill pill-idle" id="vw-race-pill">LOADING...</div>
-  <div id="vw-clock" style="font-size:22px;font-weight:bold;color:var(--accent2);letter-spacing:2px;margin-left:auto">--:--:--</div>
-  <select id="vw-base-layer-sel" onchange="VW.setViewerBaseLayer(this.value)" style="font-size:14px;padding:4px 6px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font);flex-shrink:0;max-width:80px;margin-left:auto">
-    <option value="Topo">Topo</option>
-    <option value="Satellite">Satellite</option>
-    <option value="Street">Street</option>
-    <option value="Dark">Dark</option>
-  </select>
-  <div id="view-toggle" style="gap:6px">
-    <button onclick="VW.toggleView()" id="vw-toggle-btn">LEADERBOARD</button>
+  <div id="vt-row-name">
+    <h1>&#9654; RaceTracker</h1>
+    <div class="pill pill-idle" id="vw-race-pill">LOADING...</div>
+  </div>
+  <div id="vt-row-clock">
+    <div id="vw-clock">--:--:--</div>
+  </div>
+  <div id="vt-row-controls">
+    <select id="vw-base-layer-sel" onchange="VW.setViewerBaseLayer(this.value)">
+      <option value="Topo">Topo</option>
+      <option value="Satellite">Satellite</option>
+      <option value="Street">Street</option>
+      <option value="Dark">Dark</option>
+    </select>
+    <div id="view-toggle">
+      <button onclick="VW.toggleView()" id="vw-toggle-btn">LEADERBOARD</button>
+    </div>
   </div>
 </div>
 <div id="viewer-main">
