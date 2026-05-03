@@ -89,17 +89,17 @@ function handleWS(msg) {
 }
 
 function updateMqttPill(status) {
-  const pill = document.getElementById('mqtt-pill');
-  if (!pill) return;
+  const light = document.getElementById('mqtt-light');
+  if (!light) return;
   if (status.connected) {
-    pill.className = 'pill pill-ok pill-pulse';
-    pill.textContent = 'MQTT';
+    light.className = 'ds-light ds-light-ok';
+    light.title = `MQTT: Connected${status.host ? ' · ' + status.host : ''}`;
   } else if (status.enabled) {
-    pill.className = 'pill pill-error';
-    pill.textContent = 'MQTT';
+    light.className = 'ds-light ds-light-error';
+    light.title = 'MQTT: Error — not connected';
   } else {
-    pill.className = 'pill pill-idle';
-    pill.textContent = 'MQTT';
+    light.className = 'ds-light ds-light-idle';
+    light.title = 'MQTT: Offline';
   }
 }
 
@@ -1799,14 +1799,17 @@ async function testMqtt() {
 }
 
 function updateAprsPill(status) {
-  const pill = document.getElementById('aprs-topbar-pill');
-  if (!pill) return;
+  const light = document.getElementById('aprs-light');
+  if (!light) return;
   if (status.connected) {
-    pill.className = 'pill pill-ok pill-pulse';
+    light.className = 'ds-light ds-light-ok';
+    light.title = `APRS: Connected${status.server ? ' · ' + status.server : ''}`;
   } else if (status.enabled) {
-    pill.className = 'pill pill-error';
+    light.className = 'ds-light ds-light-error';
+    light.title = 'APRS: Error — not connected';
   } else {
-    pill.className = 'pill pill-idle';
+    light.className = 'ds-light ds-light-idle';
+    light.title = 'APRS: Offline';
   }
 }
 

@@ -58,8 +58,12 @@
 <div id="topbar">
   <h1>&#9654; RaceTracker</h1>
   <div class="pill pill-idle" id="active-race-pill">NO ACTIVE RACE</div>
-  <div class="pill pill-idle" id="mqtt-pill">MQTT</div>
-  <div class="pill pill-idle" id="aprs-topbar-pill">APRS</div>
+  <div class="ds-lights">
+    <span class="ds-light ds-light-idle" id="mqtt-light"  title="MQTT: Offline"></span>
+    <span class="ds-light ds-light-idle" id="aprs-light"  title="APRS: Offline"></span>
+    <span class="ds-light ds-light-off"  id="ds3-light"   title="—"></span>
+    <span class="ds-light ds-light-off"  id="ds4-light"   title="—"></span>
+  </div>
 
   <div id="topbar-right">
     <button onclick="window.location.href=RT.BASE+'operator.html'">OPERATOR VIEW</button>

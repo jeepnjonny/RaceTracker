@@ -87,8 +87,12 @@
 <div id="topbar">
   <h1>&#9654; RaceTracker</h1>
   <div class="pill pill-idle" id="race-pill">NO RACE</div>
-  <div class="pill pill-idle" id="mqtt-pill">MQTT</div>
-  <div class="pill pill-idle" id="aprs-pill">APRS</div>
+  <div class="ds-lights">
+    <span class="ds-light ds-light-idle" id="mqtt-light"  title="MQTT: Offline"></span>
+    <span class="ds-light ds-light-idle" id="aprs-light"  title="APRS: Offline"></span>
+    <span class="ds-light ds-light-off"  id="ds3-light"   title="—"></span>
+    <span class="ds-light ds-light-off"  id="ds4-light"   title="—"></span>
+  </div>
   <div id="race-clock" style="font-size:24px;font-weight:bold;color:var(--accent2);letter-spacing:2px">--:--:--</div>
   <button id="start-window-btn" class="hidden" onclick="OP.toggleStartWindow()" style="font-size:14px;padding:4px 10px;white-space:nowrap">OPEN START WINDOW</button>
   <button id="start-race-btn" class="hidden" onclick="OP.startRace()" style="font-size:14px;padding:4px 10px;white-space:nowrap;background:rgba(63,185,80,.18);border-color:#3fb950;color:#3fb950">START RACE</button>
