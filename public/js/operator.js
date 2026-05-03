@@ -1337,13 +1337,45 @@ function handleMessageStatus(data) {
   if (msg) { msg.status = data.status; renderMessages(); }
 }
 
+function updateMsgUnread() {
+  const unread = messages.filter(m => m.direction === 'in' && !m.read).length;
+  const count = document.getElementById('msg-unread-count');
+  if (count) count.textContent = unread ? `(${unread} unread)` : '';
+}
+
+async function markThreadRead(nodeId) {
+  const toMark = messages.filter(m => m.direction === 'in' && !m.read && m.from_node_id === nodeId);
+  if (!toMark.length) return;
+  for (const m of toMark) {
+    m.read = 1;
+    try { await RT.put(`/api/races/${race.id}/messages/${m.id}/read`, {}); } catch {}
+    alerts = alerts.filter(a => a._msgId !== m.id);
+  }
+  updateMsgUnread();
+  renderAlertsList();
+  updateAlertCount();
+}
+
+function jumpToMsg(nodeId, alertId) {
+  const sel = document.getElementById('msg-to');
+  if (sel && nodeId) { sel.value = nodeId; renderMessages(); }
+  dismissAlert(alertId);
+}
+
 function handleMessage(data) {
-  if (!messages.find(m => m.id === data.id)) messages.unshift(data);
+  const isNew = !messages.find(m => m.id === data.id);
+  if (isNew) messages.unshift(data);
   renderMessages();
-  if (data.direction === 'in') {
-    const unread = messages.filter(m => m.direction === 'in' && !m.read).length;
-    const count = document.getElementById('msg-unread-count');
-    if (count) count.textContent = unread ? `(${unread} unread)` : '';
+  if (isNew && data.direction === 'in') {
+    updateMsgUnread();
+    // Add to alerts panel so the badge lights up
+    alerts.push({
+      id: Date.now(), _msgId: data.id, _fromNodeId: data.from_node_id,
+      type: 'message', from: data.from_name || data.from_node_id,
+      text: data.text, timestamp: data.timestamp,
+    });
+    renderAlertsList();
+    updateAlertCount();
     RT.toast(`MSG from ${data.from_name || data.from_node_id}: ${data.text}`, 'info', 6000);
   }
 }
@@ -1533,8 +1565,21 @@ function renderAlertsList() {
   const el = document.getElementById('alerts-list');
   if (!el) return;
   if (!alerts.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No active alerts.</div>'; return; }
-  el.innerHTML = alerts.slice().reverse().map(a =>
-    `<div class="alert-badge">
+  el.innerHTML = alerts.slice().reverse().map(a => {
+    if (a.type === 'message') {
+      const preview = a.text.length > 50 ? a.text.slice(0, 50) + '…' : a.text;
+      return `<div class="alert-badge">
+        <span style="font-size:22px">💬</span>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:bold">MESSAGE</div>
+          <div class="text-dim" style="font-size:13px">${a.from} · ${RT.fmtTime(a.timestamp, fmt24)}</div>
+          <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${preview}</div>
+        </div>
+        <button style="margin-left:auto;font-size:13px;padding:2px 8px;white-space:nowrap" onclick="OP.jumpToMsg('${a._fromNodeId}', ${a.id})">View</button>
+        <button style="font-size:13px;padding:2px 6px" onclick="OP.dismissAlert(${a.id})">✕</button>
+      </div>`;
+    }
+    return `<div class="alert-badge">
       <span style="font-size:24px">⚠</span>
       <div>
         <div style="font-weight:bold">${a.type?.replace('_',' ').toUpperCase()}</div>
@@ -1543,16 +1588,26 @@ function renderAlertsList() {
         ${a.battery != null ? `<div style="font-size:13px">${a.battery}% battery remaining</div>` : ''}
       </div>
       <button style="margin-left:auto;font-size:13px;padding:2px 6px" onclick="OP.dismissAlert(${a.id})">✕</button>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
 }
 
-function dismissAlert(id) {
-  alerts = alerts.filter(a => a.id !== id);
+async function dismissAlert(id) {
+  const a = alerts.find(x => x.id === id);
+  alerts = alerts.filter(x => x.id !== id);
   renderAlertsList();
   updateAlertCount();
-  renderLeaderboard();
-  renderAllMarkers();
+  if (a?.type === 'message' && a._msgId) {
+    const m = messages.find(msg => msg.id === a._msgId);
+    if (m && !m.read) {
+      m.read = 1;
+      try { await RT.put(`/api/races/${race.id}/messages/${a._msgId}/read`, {}); } catch {}
+      updateMsgUnread();
+    }
+  } else {
+    renderLeaderboard();
+    renderAllMarkers();
+  }
 }
 
 function updateAlertCount() {
@@ -1601,6 +1656,7 @@ function renderMessages() {
     </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
+  if (nodeId) markThreadRead(nodeId);
 }
 
 async function sendMessage() {
@@ -1946,7 +2002,7 @@ document.addEventListener('keydown', e => {
 init();
 
 return { setBaseLayer, setSort, selectParticipant, switchRightTab, saveParticipant,
-         openEditModal, sendMessage, dismissAlert, showViewerLink, copyViewerLink,
+         openEditModal, sendMessage, dismissAlert, jumpToMsg, showViewerLink, copyViewerLink,
          toggleStartWindow, endRace,
          switchLeftTab, selectStation,
          openBatchCheckIn, closeBatchCheckIn, addBatchRow, removeBatchRow,
