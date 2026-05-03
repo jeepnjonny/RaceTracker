@@ -103,7 +103,7 @@ function parseAprsMessage(body) {
   if (!addressee) return null;
   let text = body.slice(addrEnd + 1);
   let seq = null;
-  const seqMatch = text.match(/\{(\d+)\}$/);
+  const seqMatch = text.match(/\{([A-Za-z0-9]{1,5})\}?$/);
   if (seqMatch) { seq = seqMatch[1]; text = text.slice(0, seqMatch.index); }
   return { addressee, text: text.trim(), seq };
 }
