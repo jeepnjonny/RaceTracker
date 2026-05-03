@@ -103,6 +103,9 @@ function handlePosition({ nodeId, lat, lon, altitude, speed, heading, snr, rssi,
       checkOffCourse(participant, activeRace, lat, lon, timestamp);
       checkBetweenBeaconStations(participant, activeRace, lat, lon, timestamp);
     }
+
+    const personnelMember = findPersonnel(nodeId, activeRace.id);
+    if (personnelMember) checkPersonnelStation(personnelMember, activeRace, lat, lon);
   }
 
   broadcast('position', { nodeId, lat, lon, altitude, speed, heading, battery, snr, rssi, timestamp });
@@ -201,6 +204,37 @@ function findParticipant(nodeId, raceId) {
     if (p) return p;
   }
   return null;
+}
+
+function findPersonnel(nodeId, raceId) {
+  const reg = db.prepare('SELECT long_name, short_name FROM tracker_registry WHERE node_id=?').get(nodeId);
+  const ids = [nodeId, reg?.long_name, reg?.short_name].filter(Boolean);
+  for (const id of ids) {
+    const p = db.prepare(
+      'SELECT * FROM personnel WHERE race_id=? AND UPPER(tracker_id)=UPPER(?) LIMIT 1'
+    ).get(raceId, id);
+    if (p) return p;
+  }
+  return null;
+}
+
+function checkPersonnelStation(person, race, lat, lon) {
+  const radius = race.geofence_radius || 200;
+  const stns = db.prepare(
+    'SELECT * FROM stations WHERE race_id=? AND lat IS NOT NULL AND lon IS NOT NULL'
+  ).all(race.id);
+  for (const stn of stns) {
+    if (geo.inGeofence(lat, lon, stn.lat, stn.lon, radius)) {
+      if (person.station_id === stn.id) return; // already registered here
+      db.prepare('UPDATE personnel SET station_id=? WHERE id=?').run(stn.id, person.id);
+      const updated = db.prepare(
+        'SELECT p.*, s.name as station_name FROM personnel p LEFT JOIN stations s ON p.station_id=s.id WHERE p.id=?'
+      ).get(person.id);
+      logger.log('system', 'info', `Personnel auto-assign: ${person.name} → ${stn.name}`);
+      broadcast('personnel_update', { action: 'update', personnel: updated });
+      return;
+    }
+  }
 }
 
 // Geofence check: auto-log station timing events

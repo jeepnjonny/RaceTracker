@@ -61,6 +61,7 @@ function handleWS(msg) {
   else if (type === 'message_status') handleMessageStatus(data);
   else if (type === 'participant_update') handleParticipantUpdate(data);
   else if (type === 'station_update') handleStationUpdate(data);
+  else if (type === 'personnel_update') handlePersonnelUpdate(data);
   else if (type === 'mqtt_status') updateMqttPill(data);
   else if (type === 'aprs_status') updateAprsPill(data);
   else if (type === 'tracker_info') handleTrackerInfo(data);
@@ -1403,6 +1404,22 @@ function handleParticipantUpdate(data) {
   // Retick clock in case a status change causes the clock to freeze/unfreeze
   tickClock();
   updateStartRaceBtn();
+}
+
+function handlePersonnelUpdate(data) {
+  if (data.action !== 'update') return;
+  const p = data.personnel;
+  const idx = personnel.findIndex(x => x.id === p.id);
+  const prevStationId = idx >= 0 ? personnel[idx].station_id : null;
+  if (idx >= 0) personnel[idx] = p; else personnel.push(p);
+  renderPersonnelRecipients();
+  // Refresh station panel if it's open for the affected station (new or previous)
+  if (selectedStationId && (p.station_id === selectedStationId || prevStationId === selectedStationId)) {
+    renderPersonnelTable();
+  }
+  if (p.station_name) {
+    RT.toast(`${p.name} auto-registered at ${p.station_name}`, 'info', 5000);
+  }
 }
 
 function handleStationUpdate(data) {
