@@ -14,6 +14,17 @@ let _connected = false;
 // Matches bare callsign or callsign-SSID (1–6 alphanum chars, SSID 1–15)
 const APRS_CALL_RE = /^[A-Z0-9]{1,6}(-(?:1[0-5]|[0-9]))?$/;
 
+// Byham APRS passcode algorithm
+function generatePasscode(callsign) {
+  const base = callsign.toUpperCase().split('-')[0];
+  let hash = 0x73e2;
+  for (let i = 0; i < base.length; i += 2) {
+    hash ^= base.charCodeAt(i) << 8;
+    if (i + 1 < base.length) hash ^= base.charCodeAt(i + 1);
+  }
+  return hash & 0x7fff;
+}
+
 function setWs(ws) { wsRef = ws; }
 
 function getStatus() {
@@ -287,13 +298,30 @@ function disconnect() {
 }
 
 function connectFromSettings(dbArg) {
-  const rows = (dbArg || db).prepare("SELECT key, value FROM settings WHERE key LIKE 'aprs_%'").all();
+  const _db = dbArg || db;
+  const rows = _db.prepare("SELECT key, value FROM settings WHERE key LIKE 'aprs_%'").all();
   const s = Object.fromEntries(rows.map(r => [r.key, r.value]));
   if (s.aprs_enabled !== '1' || !s.aprs_callsign) return false;
+
+  // Default: global callsign with configured or read-only passcode
+  let callsign = s.aprs_callsign.toUpperCase().trim();
+  let passcode = s.aprs_passcode || '-1';
+
+  // If messaging is enabled for the active race, prefer a user callsign (allows sending)
+  const activeRace = _db.prepare("SELECT messaging_enabled FROM races WHERE status='active' LIMIT 1").get();
+  if (activeRace?.messaging_enabled) {
+    const u = _db.prepare("SELECT callsign FROM users WHERE callsign IS NOT NULL AND callsign != '' ORDER BY id LIMIT 1").get();
+    if (u) {
+      callsign = u.callsign.toUpperCase().trim();
+      passcode = String(generatePasscode(callsign));
+      logger.log('aprs', 'info', `Using user callsign ${callsign} (passcode auto-computed) for messaging`);
+    }
+  }
+
   connect({
     enabled: true,
-    callsign: s.aprs_callsign.toUpperCase().trim(),
-    passcode: s.aprs_passcode || '-1',
+    callsign,
+    passcode,
     server: s.aprs_server || 'rotate.aprs2.net',
     port: parseInt(s.aprs_port) || 14580,
     filterType: s.aprs_filter_type || 'location',
@@ -338,4 +366,4 @@ function previewFilter(filterType) {
   return buildFilter(filterType);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, generatePasscode };

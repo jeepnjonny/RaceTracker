@@ -255,6 +255,8 @@ try {
   db.prepare("UPDATE races SET speed_display='speed' WHERE speed_units IN ('mph','kmh') AND speed_display='pace'").run();
 } catch {}
 
+try { db.prepare('ALTER TABLE users ADD COLUMN callsign TEXT').run(); } catch {}
+
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();
 if (userCount.c === 0) {

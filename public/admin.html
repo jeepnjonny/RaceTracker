@@ -243,6 +243,14 @@
       <label>ROLE</label>
       <select id="um-role"><option value="operator">Operator</option><option value="admin">Admin</option></select>
     </div>
+    <div class="form-group">
+      <label>APRS CALLSIGN <span class="text-dim">(optional — enables outbound messaging)</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="um-callsign" placeholder="e.g. W1ABC-9" style="flex:1" oninput="umUpdatePasscode()">
+        <span style="font-size:13px;color:var(--text3)">Passcode:</span>
+        <span id="um-passcode" style="font-size:14px;color:var(--accent2);font-weight:bold;min-width:40px">—</span>
+      </div>
+    </div>
     <div class="modal-footer">
       <button onclick="closeModal('user-modal')">CANCEL</button>
       <button class="primary" onclick="saveUser()">SAVE</button>

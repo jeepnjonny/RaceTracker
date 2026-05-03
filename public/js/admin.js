@@ -1543,15 +1543,32 @@ function renderUsersTab() {
   </div>`;
 }
 
+function aprsPasscode(callsign) {
+  const base = callsign.toUpperCase().split('-')[0];
+  let hash = 0x73e2;
+  for (let i = 0; i < base.length; i += 2) {
+    hash ^= base.charCodeAt(i) << 8;
+    if (i + 1 < base.length) hash ^= base.charCodeAt(i + 1);
+  }
+  return hash & 0x7fff;
+}
+
+function umUpdatePasscode() {
+  const val = document.getElementById('um-callsign').value.trim();
+  const el = document.getElementById('um-passcode');
+  el.textContent = val ? aprsPasscode(val) : '—';
+}
+
 async function loadUsers() {
   const res = await RT.get('/api/users');
   users = res.ok ? res.data : [];
   const el = document.getElementById('users-list');
   if (!el) return;
-  el.innerHTML = `<table class="data-table"><thead><tr><th>USERNAME</th><th>ROLE</th><th>CREATED</th><th></th></tr></thead><tbody>
+  el.innerHTML = `<table class="data-table"><thead><tr><th>USERNAME</th><th>ROLE</th><th>CALLSIGN</th><th>CREATED</th><th></th></tr></thead><tbody>
     ${users.map(u => `<tr>
       <td>${u.username}${u.id===currentUser.id?' <span class="text-dim">(you)</span>':''}</td>
       <td><span class="badge" style="color:${u.role==='admin'?'var(--accent3)':'var(--accent)'}">${u.role.toUpperCase()}</span></td>
+      <td style="font-size:13px;color:var(--accent2)">${u.callsign || '<span class="text-dim">—</span>'}</td>
       <td class="text-dim">${new Date(u.created_at*1000).toLocaleDateString()}</td>
       <td style="text-align:right">
         <button style="font-size:13px;padding:2px 8px" onclick="openUserModal(${u.id})">EDIT</button>
@@ -1568,16 +1585,19 @@ function openUserModal(id) {
   document.getElementById('um-username').value = user?.username || '';
   document.getElementById('um-password').value = '';
   document.getElementById('um-role').value = user?.role || 'operator';
+  document.getElementById('um-callsign').value = user?.callsign || '';
+  umUpdatePasscode();
   document.getElementById('user-modal').classList.remove('hidden');
 }
 
 async function saveUser() {
   const username = document.getElementById('um-username').value.trim();
   const password = document.getElementById('um-password').value;
-  const role = document.getElementById('um-role').value;
+  const role     = document.getElementById('um-role').value;
+  const callsign = document.getElementById('um-callsign').value.trim().toUpperCase() || null;
   if (!username) { RT.toast('Username required', 'warn'); return; }
   if (!editingUserId && !password) { RT.toast('Password required for new user', 'warn'); return; }
-  const body = { username, role };
+  const body = { username, role, callsign };
   if (password) body.password = password;
   const res = editingUserId
     ? await RT.put(`/api/users/${editingUserId}`, body)
