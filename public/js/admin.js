@@ -1662,7 +1662,6 @@ function renderSettingsTab() {
     <h3>APRS-IS</h3>
     <div class="form-row">
       <div class="form-group"><label>CALLSIGN</label><input id="s-aprs-callsign" placeholder="K7SWI" oninput="this.value=this.value.toUpperCase()"></div>
-      <div class="form-group"><label>PASSCODE <span class="text-dim">(-1 = read-only)</span></label><input id="s-aprs-passcode" placeholder="-1" value="-1"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>SERVER</label><input id="s-aprs-server" placeholder="rotate.aprs2.net"></div>
@@ -1730,7 +1729,6 @@ async function bindSettingsTab() {
   document.getElementById('s-mqtt-diagnostic').checked = s.mqtt_diagnostic === '1';
 
   document.getElementById('s-aprs-callsign').value   = s.aprs_callsign || '';
-  document.getElementById('s-aprs-passcode').value   = s.aprs_passcode || '-1';
   document.getElementById('s-aprs-server').value     = s.aprs_server || 'rotate.aprs2.net';
   document.getElementById('s-aprs-port').value       = s.aprs_port || '14580';
   const filterType = s.aprs_filter_type || 'location';
@@ -1762,7 +1760,7 @@ async function saveAprsSettings() {
   const filterType = document.querySelector('input[name="aprs-filter"]:checked')?.value || 'location';
   const res = await RT.put('/api/settings', {
     aprs_callsign:    document.getElementById('s-aprs-callsign').value.trim().toUpperCase() || null,
-    aprs_passcode:    document.getElementById('s-aprs-passcode').value.trim() || '-1',
+    aprs_passcode:    '-1',
     aprs_server:      document.getElementById('s-aprs-server').value.trim() || 'rotate.aprs2.net',
     aprs_port:        document.getElementById('s-aprs-port').value || '14580',
     aprs_filter_type: filterType,
