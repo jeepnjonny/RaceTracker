@@ -278,7 +278,11 @@ function disconnect() {
   _connected = false;
   currentConfig = null;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (socket) { try { socket.destroy(); } catch {} socket = null; }
+  if (socket) {
+    socket.removeAllListeners(); // prevent stale close/error events firing on the new socket's context
+    try { socket.destroy(); } catch {}
+    socket = null;
+  }
   lineBuffer = '';
 }
 
