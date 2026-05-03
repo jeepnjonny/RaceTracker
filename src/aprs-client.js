@@ -93,6 +93,49 @@ function inferAltitudeMeters(rawFt, nodeId) {
   return asMeters; // default: APRS spec (feet → meters)
 }
 
+// Parse APRS message body — body must start with ':' (message type indicator)
+// Returns { addressee, text, seq } or null
+function parseAprsMessage(body) {
+  if (!body || body[0] !== ':') return null;
+  const addrEnd = body.indexOf(':', 1);
+  if (addrEnd < 0) return null;
+  const addressee = body.slice(1, addrEnd).trim().toUpperCase();
+  if (!addressee) return null;
+  let text = body.slice(addrEnd + 1);
+  let seq = null;
+  const seqMatch = text.match(/\{(\d+)\}$/);
+  if (seqMatch) { seq = seqMatch[1]; text = text.slice(0, seqMatch.index); }
+  return { addressee, text: text.trim(), seq };
+}
+
+function sendAck(toCallsign, seq) {
+  if (!socket || !_connected || !currentConfig) return;
+  const from = currentConfig.callsign;
+  const to   = toCallsign.toUpperCase().trim().padEnd(9, ' ');
+  try {
+    socket.write(`${from}>APRS,TCPIP*,qAC,${from}::${to}:ack${seq}\r\n`);
+    logger.log('aprs', 'info', `ACK→${toCallsign.trim()} seq=${seq}`);
+  } catch (e) {
+    logger.log('aprs', 'error', `sendAck failed: ${e.message}`);
+  }
+}
+
+function handleInboundMessage(fromCall, text) {
+  const race = db.prepare("SELECT * FROM races WHERE status='active' LIMIT 1").get();
+  if (!race) return;
+  const person = db.prepare(
+    "SELECT * FROM personnel WHERE race_id=? AND UPPER(tracker_id)=? LIMIT 1"
+  ).get(race.id, fromCall.toUpperCase());
+  const ts = Math.floor(Date.now() / 1000);
+  const result = db.prepare(`
+    INSERT INTO messages (race_id, direction, from_node_id, from_name, to_node_id, text, timestamp)
+    VALUES (?,?,?,?,?,?,?)
+  `).run(race.id, 'in', fromCall, person?.name || fromCall, currentConfig?.callsign || null, text, ts);
+  const msg = db.prepare('SELECT * FROM messages WHERE id=?').get(result.lastInsertRowid);
+  logger.log('aprs', 'info', `MSG from ${fromCall}${person ? ' (' + person.name + ')' : ''}: ${text}`);
+  broadcast('message', msg);
+}
+
 function processLine(line) {
   if (!line) return;
   if (line.startsWith('#')) {
@@ -111,6 +154,21 @@ function processLine(line) {
   if (gi < 0) return;
   const fromCall = header.slice(0, gi).toUpperCase().trim();
   if (!fromCall) return;
+
+  // APRS message packet — check before position parsing
+  const aprsMsg = parseAprsMessage(body);
+  if (aprsMsg) {
+    const myCall = currentConfig?.callsign?.toUpperCase();
+    if (myCall && aprsMsg.addressee === myCall) {
+      if (/^(ack|rej)\d+$/i.test(aprsMsg.text)) {
+        logger.log('aprs', 'info', `${aprsMsg.text.slice(0, 3).toUpperCase()} from ${fromCall}: seq=${aprsMsg.text.slice(3)}`);
+      } else {
+        handleInboundMessage(fromCall, aprsMsg.text);
+        if (aprsMsg.seq) sendAck(fromCall, aprsMsg.seq);
+      }
+    }
+    return; // message packets never carry position data
+  }
 
   const pos = parsePosition(body);
   if (!pos) return;
