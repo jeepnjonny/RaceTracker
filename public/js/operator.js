@@ -1324,7 +1324,7 @@ function handleAlert(data) {
 }
 
 function handleMessage(data) {
-  messages.unshift(data);
+  if (!messages.find(m => m.id === data.id)) messages.unshift(data);
   renderMessages();
   if (data.direction === 'in') {
     const unread = messages.filter(m => m.direction === 'in' && !m.read).length;
@@ -1576,10 +1576,11 @@ function renderMessages() {
   const thread = nodeId
     ? messages.filter(m => m.from_node_id === nodeId || m.to_node_id === nodeId)
     : messages.slice(0, 20);
-  el.innerHTML = thread.map(m => {
+  // messages array is newest-first; reverse so oldest renders at top, newest at bottom
+  el.innerHTML = [...thread].reverse().map(m => {
     const cls = m.direction === 'out' ? 'msg-bubble-out' : 'msg-bubble-in';
     const from = m.direction === 'in' ? (m.from_name || m.from_node_id) : 'You';
-    return `<div class="${cls}" style="max-width:90%;font-size:13px">
+    return `<div class="${cls}" style="max-width:85%;font-size:13px">
       <div style="font-size:11px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}</div>
       <div>${m.text}</div>
     </div>`;
@@ -1596,8 +1597,7 @@ async function sendMessage() {
   const res = await RT.post(`/api/races/${race.id}/messages`, { to_node_id, to_name, text });
   if (res.ok) {
     document.getElementById('msg-input').value = '';
-    messages.unshift(res.data);
-    renderMessages();
+    // WS broadcast handles adding to messages array and re-rendering
     if (!res.data.sent) RT.toast('Message saved — not delivered (offline)', 'warn');
   } else RT.toast(res.error, 'warn');
 }
