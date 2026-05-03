@@ -102,11 +102,9 @@ async function startRace() {
 }
 
 function applyMessagingFlag() {
-  const btn = document.querySelector('#right-panel .tab-btn[onclick*="\'msg\'"]');
-  if (!btn) return;
-  const enabled = race?.messaging_enabled;
-  btn.style.display = enabled ? '' : 'none';
-  if (!enabled && rightTab === 'msg') switchRightTab('info');
+  const panel = document.getElementById('msg-panel');
+  if (!panel) return;
+  panel.style.display = race?.messaging_enabled ? 'flex' : 'none';
 }
 
 function applyWeatherFlag() {
@@ -1329,9 +1327,9 @@ function handleMessage(data) {
   messages.unshift(data);
   renderMessages();
   if (data.direction === 'in') {
-    const count = document.getElementById('msg-tab-count');
     const unread = messages.filter(m => m.direction === 'in' && !m.read).length;
-    count.textContent = unread ? `(${unread})` : '';
+    const count = document.getElementById('msg-unread-count');
+    if (count) count.textContent = unread ? `(${unread} unread)` : '';
     RT.toast(`MSG from ${data.from_name || data.from_node_id}: ${data.text}`, 'info', 6000);
   }
 }
@@ -1558,29 +1556,31 @@ function updateAlertCount() {
 
 // ── Messaging ─────────────────────────────────────────────────────────────────
 function renderPersonnelRecipients() {
-  const sel = document.getElementById('msg-recipient');
+  const sel = document.getElementById('msg-to');
   if (!sel) return;
+  const prev = sel.value;
   const msgPersonnel = personnel.filter(p => p.tracker_id);
-  sel.innerHTML = '<option value="">Select recipient...</option>' +
+  sel.innerHTML = '<option value="">— Select recipient —</option>' +
     msgPersonnel.map(p =>
-      `<option value="${p.tracker_id}" data-name="${p.name}">${p.name}${p.station_name?' @ '+p.station_name:''}</option>`
+      `<option value="${p.tracker_id}" data-name="${p.name}">${p.name}${p.station_name ? ' @ ' + p.station_name : ''}</option>`
     ).join('');
-  sel.addEventListener('change', () => renderMessages());
+  if (prev) sel.value = prev;
+  sel.onchange = () => renderMessages();
 }
 
 function renderMessages() {
-  const sel = document.getElementById('msg-recipient');
+  const sel = document.getElementById('msg-to');
   const nodeId = sel?.value;
-  const el = document.getElementById('msg-thread');
+  const el = document.getElementById('msg-thread-mini');
   if (!el) return;
   const thread = nodeId
     ? messages.filter(m => m.from_node_id === nodeId || m.to_node_id === nodeId)
-    : messages.slice(0, 30);
+    : messages.slice(0, 20);
   el.innerHTML = thread.map(m => {
     const cls = m.direction === 'out' ? 'msg-bubble-out' : 'msg-bubble-in';
     const from = m.direction === 'in' ? (m.from_name || m.from_node_id) : 'You';
-    return `<div class="${cls}" style="max-width:90%;font-size:14px">
-      <div style="font-size:13px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}</div>
+    return `<div class="${cls}" style="max-width:90%;font-size:13px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}</div>
       <div>${m.text}</div>
     </div>`;
   }).join('');
@@ -1588,17 +1588,17 @@ function renderMessages() {
 }
 
 async function sendMessage() {
-  const sel = document.getElementById('msg-recipient');
+  const sel = document.getElementById('msg-to');
   const to_node_id = sel?.value;
   const to_name = sel?.options[sel.selectedIndex]?.dataset.name;
-  const text = document.getElementById('msg-text').value.trim();
+  const text = document.getElementById('msg-input').value.trim();
   if (!to_node_id || !text) { RT.toast('Select a recipient and enter a message', 'warn'); return; }
   const res = await RT.post(`/api/races/${race.id}/messages`, { to_node_id, to_name, text });
   if (res.ok) {
-    document.getElementById('msg-text').value = '';
+    document.getElementById('msg-input').value = '';
     messages.unshift(res.data);
     renderMessages();
-    if (!res.data.sent) RT.toast('Message saved but MQTT offline — not delivered', 'warn');
+    if (!res.data.sent) RT.toast('Message saved — not delivered (offline)', 'warn');
   } else RT.toast(res.error, 'warn');
 }
 
@@ -1754,7 +1754,6 @@ function switchRightTab(id) {
   });
   document.querySelectorAll('#right-panel .tab-content').forEach(t => t.classList.remove('active'));
   document.getElementById(`right-tab-${id}`)?.classList.add('active');
-  if (id === 'msg') renderMessages();
   if (id === 'alerts') renderAlertsList();
   if (id === 'weather') renderWeatherPanel();
 }

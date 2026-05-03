@@ -297,6 +297,26 @@ function connectFromSettings(dbArg) {
   return true;
 }
 
+// ── Outbound messaging ────────────────────────────────────────────────────────
+let _msgSeq = 0;
+
+function sendMessage(toCallsign, text) {
+  if (!socket || !_connected) return false;
+  _msgSeq = (_msgSeq % 999) + 1;
+  const seq = String(_msgSeq).padStart(3, '0');
+  const from = currentConfig.callsign;
+  const to   = toCallsign.toUpperCase().trim().padEnd(9, ' ');
+  const packet = `${from}>APRS,TCPIP*,qAC,${from}::${to}:${text}{${seq}}\r\n`;
+  try {
+    socket.write(packet);
+    logger.log('aprs', 'info', `MSG→${toCallsign.trim()}: ${text}`);
+    return seq;
+  } catch (e) {
+    logger.log('aprs', 'error', `sendMessage failed: ${e.message}`);
+    return false;
+  }
+}
+
 // Called after participants/personnel roster changes to refresh callsign filter live
 function notifyRosterChange() {
   if (!socket || !_connected || !currentConfig) return;
@@ -314,4 +334,4 @@ function previewFilter(filterType) {
   return buildFilter(filterType);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage };

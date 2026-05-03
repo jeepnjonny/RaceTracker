@@ -162,42 +162,48 @@
 
   <!-- RIGHT: INFO / MESSAGING PANEL -->
   <div class="panel panel-right" id="right-panel" style="display:flex;flex-direction:column;overflow:hidden">
-    <div class="panel-tabs">
-      <button class="tab-btn active" onclick="OP.switchRightTab('info')">INFO</button>
-      <button class="tab-btn" onclick="OP.switchRightTab('alerts')">ALERTS <span id="alert-tab-count"></span></button>
-      <button class="tab-btn" onclick="OP.switchRightTab('msg')">MSG <span id="msg-tab-count"></span></button>
-      <button class="tab-btn" onclick="OP.switchRightTab('log')">LOG</button>
-      <button class="tab-btn" id="wx-tab-btn" onclick="OP.switchRightTab('weather')" style="display:none">WX</button>
-    </div>
-    <!-- INFO TAB -->
-    <div class="tab-content active" id="right-tab-info" style="padding:0;overflow-y:auto">
-      <div id="info-panel" style="padding:10px;color:var(--text2);font-size:16px">
-        Click a tracker on the map or a row in the leaderboard.
+    <!-- Upper: tabs -->
+    <div id="right-panel-top" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+      <div class="panel-tabs">
+        <button class="tab-btn active" onclick="OP.switchRightTab('info')">INFO</button>
+        <button class="tab-btn" onclick="OP.switchRightTab('alerts')">ALERTS <span id="alert-tab-count"></span></button>
+        <button class="tab-btn" onclick="OP.switchRightTab('log')">LOG</button>
+        <button class="tab-btn" id="wx-tab-btn" onclick="OP.switchRightTab('weather')" style="display:none">WX</button>
+      </div>
+      <!-- INFO TAB -->
+      <div class="tab-content active" id="right-tab-info" style="padding:0;overflow-y:auto">
+        <div id="info-panel" style="padding:10px;color:var(--text2);font-size:16px">
+          Click a tracker on the map or a row in the leaderboard.
+        </div>
+      </div>
+      <!-- ALERTS TAB -->
+      <div class="tab-content" id="right-tab-alerts" style="padding:8px;overflow-y:auto">
+        <div id="alerts-list"></div>
+      </div>
+      <!-- LOG TAB -->
+      <div class="tab-content" id="right-tab-log" style="padding:0;overflow-y:auto">
+        <div id="event-log"></div>
+      </div>
+      <!-- WEATHER TAB -->
+      <div class="tab-content" id="right-tab-weather" style="padding:10px;overflow-y:auto">
+        <div id="weather-panel"></div>
       </div>
     </div>
-    <!-- ALERTS TAB -->
-    <div class="tab-content" id="right-tab-alerts" style="padding:8px;overflow-y:auto">
-      <div id="alerts-list"></div>
-    </div>
-    <!-- MESSAGING TAB -->
-    <div class="tab-content" id="right-tab-msg" style="padding:0;flex-direction:column;overflow:hidden">
-      <div style="padding:8px;border-bottom:1px solid var(--border);flex-shrink:0">
-        <label>RECIPIENT</label>
-        <select id="msg-recipient" style="width:100%"></select>
+    <!-- Lower: always-visible messaging (shown when messaging_enabled) -->
+    <div id="msg-panel" style="display:none;flex-direction:column;border-top:2px solid var(--border);flex-shrink:0;height:210px">
+      <div style="padding:3px 8px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <span style="font-size:11px;letter-spacing:2px;color:var(--text3)">MESSAGES</span>
+        <span id="msg-unread-count" style="font-size:12px;color:var(--accent2);font-weight:bold"></span>
       </div>
-      <div class="msg-wrap" id="msg-thread"></div>
-      <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
-        <input id="msg-text" placeholder="Type message..." style="flex:1">
-        <button class="primary" onclick="OP.sendMessage()">SEND</button>
+      <div class="msg-wrap" id="msg-thread-mini" style="flex:1;min-height:0"></div>
+      <div style="padding:5px 8px;border-top:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:4px">
+        <select id="msg-to" style="width:100%;font-size:13px;padding:2px 4px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:var(--font)"></select>
+        <div style="display:flex;gap:5px">
+          <input id="msg-input" placeholder="Message (max 67 chars)…" maxlength="67" style="flex:1;font-size:13px"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();OP.sendMessage();}">
+          <button class="primary" onclick="OP.sendMessage()" style="font-size:13px;padding:3px 10px">SEND</button>
+        </div>
       </div>
-    </div>
-    <!-- LOG TAB -->
-    <div class="tab-content" id="right-tab-log" style="padding:0;overflow-y:auto">
-      <div id="event-log"></div>
-    </div>
-    <!-- WEATHER TAB -->
-    <div class="tab-content" id="right-tab-weather" style="padding:10px;overflow-y:auto">
-      <div id="weather-panel"></div>
     </div>
   </div>
 </div>
