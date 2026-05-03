@@ -33,24 +33,31 @@ router.post('/', requireRole('admin', 'operator'), (req, res) => {
   const ts = Math.floor(Date.now() / 1000);
   const username = req.session?.user?.username || 'operator';
 
-  let sent = false;
   let fromNodeId = null;
+  const isAprs = APRS_CALL_RE.test(to_node_id.trim());
 
-  if (APRS_CALL_RE.test(to_node_id.trim())) {
+  if (isAprs) {
     const aprsRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'aprs_%'").all();
     const s = Object.fromEntries(aprsRows.map(r => [r.key, r.value]));
     fromNodeId = s.aprs_callsign || null;
-    sent = aprsClient.sendMessage(to_node_id.trim(), text) !== false;
-  } else {
-    sent = mqttClient.publishMessage(to_node_id, text);
   }
 
+  // Insert first (status=queued) so we have an ID for ACK tracking
   const result = db.prepare(`
-    INSERT INTO messages (race_id, direction, from_node_id, from_name, to_node_id, to_name, text, timestamp)
-    VALUES (?,?,?,?,?,?,?,?)
+    INSERT INTO messages (race_id, direction, from_node_id, from_name, to_node_id, to_name, text, timestamp, status)
+    VALUES (?,?,?,?,?,?,?,?,'queued')
   `).run(req.params.raceId, 'out', fromNodeId, username, to_node_id, to_name || null, text, ts);
+  const messageId = result.lastInsertRowid;
 
-  const msg = db.prepare('SELECT * FROM messages WHERE id=?').get(result.lastInsertRowid);
+  let sent = false;
+  if (isAprs) {
+    sent = aprsClient.sendMessage(to_node_id.trim(), text, messageId) !== false;
+  } else {
+    sent = mqttClient.publishMessage(to_node_id, text);
+    if (sent) db.prepare("UPDATE messages SET status='enroute' WHERE id=?").run(messageId);
+  }
+
+  const msg = db.prepare('SELECT * FROM messages WHERE id=?').get(messageId);
   wsManager.broadcast({ type: 'message', data: msg });
   res.json({ ok: true, data: { ...msg, sent } });
 });

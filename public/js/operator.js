@@ -58,6 +58,7 @@ function handleWS(msg) {
   else if (type === 'event') handleEvent(data);
   else if (type === 'alert') handleAlert(data);
   else if (type === 'message') handleMessage(data);
+  else if (type === 'message_status') handleMessageStatus(data);
   else if (type === 'participant_update') handleParticipantUpdate(data);
   else if (type === 'station_update') handleStationUpdate(data);
   else if (type === 'mqtt_status') updateMqttPill(data);
@@ -1323,6 +1324,19 @@ function handleAlert(data) {
   if (p) updateOrCreateMarker(p);
 }
 
+const _MSG_CLOUD = `<circle cx="4.5" cy="9" r="3" fill="currentColor"/><circle cx="8.5" cy="7" r="3.5" fill="currentColor"/><circle cx="12" cy="9" r="2.5" fill="currentColor"/><rect x="1.5" y="9" width="13" height="5" rx="2.5" fill="currentColor"/>`;
+const _MSG_STATUS_ICONS = {
+  queued:    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="13" height="13" title="Queued" style="color:#9e9e9e;vertical-align:middle;margin-left:3px">${_MSG_CLOUD}<path d="M8 13v-5M5.5 10.5L8 8l2.5 2.5" stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  enroute:   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="13" height="13" title="Enroute" style="color:#9e9e9e;vertical-align:middle;margin-left:3px">${_MSG_CLOUD}</svg>`,
+  delivered: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="13" height="13" title="Delivered" style="color:#4caf50;vertical-align:middle;margin-left:3px">${_MSG_CLOUD}<path d="M5 11l2 2.5 4.5-5" stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  error:     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="13" height="13" title="Error" style="color:#e53935;vertical-align:middle;margin-left:3px">${_MSG_CLOUD}<path d="M5.5 9.5l5 4M10.5 9.5l-5 4" stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>`,
+};
+
+function handleMessageStatus(data) {
+  const msg = messages.find(m => m.id === data.id);
+  if (msg) { msg.status = data.status; renderMessages(); }
+}
+
 function handleMessage(data) {
   if (!messages.find(m => m.id === data.id)) messages.unshift(data);
   renderMessages();
@@ -1580,8 +1594,9 @@ function renderMessages() {
   el.innerHTML = [...thread].reverse().map(m => {
     const cls = m.direction === 'out' ? 'msg-bubble-out' : 'msg-bubble-in';
     const from = m.direction === 'in' ? (m.from_name || m.from_node_id) : 'You';
+    const statusIcon = m.direction === 'out' ? (_MSG_STATUS_ICONS[m.status] || '') : '';
     return `<div class="${cls}" style="max-width:85%;font-size:13px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:2px">${from} · ${RT.fmtTime(m.timestamp, fmt24)}${statusIcon}</div>
       <div>${m.text}</div>
     </div>`;
   }).join('');

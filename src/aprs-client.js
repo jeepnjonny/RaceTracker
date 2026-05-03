@@ -11,6 +11,7 @@ let lineBuffer = '';
 let reconnectTimer = null;
 let _connected = false;
 let _messagingCallsign = null; // set to logged-in user's callsign when available
+const _pendingAcks = new Map(); // key: "CALLSIGN:seqNum" → { messageId, timer }
 
 // Matches bare callsign or callsign-SSID (1–6 alphanum chars, SSID 1–15)
 const APRS_CALL_RE = /^[A-Z0-9]{1,6}(-(?:1[0-5]|[0-9]))?$/;
@@ -93,6 +94,15 @@ function inferAltitudeMeters(rawFt, nodeId) {
   return asMeters; // default: APRS spec (feet → meters)
 }
 
+function updateMessageStatus(messageId, status) {
+  try {
+    db.prepare('UPDATE messages SET status=? WHERE id=?').run(status, messageId);
+    broadcast('message_status', { id: messageId, status });
+  } catch (e) {
+    logger.log('aprs', 'error', `updateMessageStatus failed: ${e.message}`);
+  }
+}
+
 // Parse APRS message body — body must start with ':' (message type indicator)
 // Returns { addressee, text, seq } or null
 function parseAprsMessage(body) {
@@ -161,7 +171,16 @@ function processLine(line) {
     const myCall = currentConfig?.callsign?.toUpperCase();
     if (myCall && aprsMsg.addressee === myCall) {
       if (/^(ack|rej)\d+$/i.test(aprsMsg.text)) {
-        logger.log('aprs', 'info', `${aprsMsg.text.slice(0, 3).toUpperCase()} from ${fromCall}: seq=${aprsMsg.text.slice(3)}`);
+        const ackType = aprsMsg.text.slice(0, 3).toUpperCase();
+        const ackSeq  = parseInt(aprsMsg.text.slice(3));
+        logger.log('aprs', 'info', `${ackType} from ${fromCall}: seq=${ackSeq}`);
+        const key = `${fromCall.toUpperCase().trim()}:${ackSeq}`;
+        const pending = _pendingAcks.get(key);
+        if (pending) {
+          clearTimeout(pending.timer);
+          _pendingAcks.delete(key);
+          updateMessageStatus(pending.messageId, ackType === 'ACK' ? 'delivered' : 'error');
+        }
       } else {
         handleInboundMessage(fromCall, aprsMsg.text);
         if (aprsMsg.seq) sendAck(fromCall, aprsMsg.seq);
@@ -388,7 +407,7 @@ function connectFromSettings(dbArg) {
 // ── Outbound messaging ────────────────────────────────────────────────────────
 let _msgSeq = 0;
 
-function sendMessage(toCallsign, text) {
+function sendMessage(toCallsign, text, messageId) {
   if (!socket || !_connected) return false;
   _msgSeq = (_msgSeq % 999) + 1;
   const seq = String(_msgSeq).padStart(3, '0');
@@ -398,9 +417,19 @@ function sendMessage(toCallsign, text) {
   try {
     socket.write(packet);
     logger.log('aprs', 'info', `MSG→${toCallsign.trim()}: ${text}`);
+    if (messageId) {
+      updateMessageStatus(messageId, 'enroute');
+      const key = `${toCallsign.toUpperCase().trim()}:${parseInt(seq)}`;
+      const timer = setTimeout(() => {
+        _pendingAcks.delete(key);
+        updateMessageStatus(messageId, 'error');
+      }, 60000);
+      _pendingAcks.set(key, { messageId, timer });
+    }
     return seq;
   } catch (e) {
     logger.log('aprs', 'error', `sendMessage failed: ${e.message}`);
+    if (messageId) updateMessageStatus(messageId, 'error');
     return false;
   }
 }

@@ -256,6 +256,7 @@ try {
 } catch {}
 
 try { db.prepare('ALTER TABLE users ADD COLUMN callsign TEXT').run(); } catch {}
+try { db.prepare("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'enroute'").run(); } catch {}
 
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();
