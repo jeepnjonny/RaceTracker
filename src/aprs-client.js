@@ -394,7 +394,7 @@ function sendMessage(toCallsign, text) {
   const seq = String(_msgSeq).padStart(3, '0');
   const from = currentConfig.callsign;
   const to   = toCallsign.toUpperCase().trim().padEnd(9, ' ');
-  const packet = `${from}>APRS,TCPIP*,qAC,${from}::${to}:${text}{${seq}}\r\n`;
+  const packet = `${from}>APRS,TCPIP*,qAC,${from}::${to}:${text}{${seq}\r\n`;
   try {
     socket.write(packet);
     logger.log('aprs', 'info', `MSG→${toCallsign.trim()}: ${text}`);
