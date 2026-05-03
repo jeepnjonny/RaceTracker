@@ -926,19 +926,34 @@ function getStatus() {
   return { connected: !!(mqttClient && mqttClient.connected), enabled, host: currentConfig?.host || null };
 }
 
-// Publish an outbound text message to a specific node
+// Publish an outbound text message to a specific Meshtastic node
 function publishMessage(toNodeId, text) {
   if (!mqttClient || !mqttClient.connected || !currentConfig) return false;
-  const topic = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/!server`;
-  const payload = JSON.stringify({
-    from: 0,
-    to: toNodeId,
-    type: 'text',
-    payload: text,
+  // Meshtastic JSON expects numeric 32-bit node IDs; incoming tracker_ids are "!xxxxxxxx"
+  if (!/^![0-9a-f]{1,8}$/i.test(toNodeId)) {
+    logger.log('mqtt', 'warn', `publishMessage: invalid Meshtastic node ID "${toNodeId}"`);
+    return false;
+  }
+  const toNum  = parseInt(toNodeId.slice(1), 16) >>> 0;
+  const msgId  = (Date.now() & 0x7fffffff) >>> 0;
+  const topic  = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/!server`;
+  const packet = JSON.stringify({
+    from:      0,
+    to:        toNum,
+    id:        msgId,
+    type:      'text',
+    channel:   parseInt(currentConfig.channel) || 0,
+    payload:   text,
     timestamp: Math.floor(Date.now() / 1000),
   });
-  mqttClient.publish(topic, payload);
-  return true;
+  try {
+    mqttClient.publish(topic, packet);
+    logger.log('mqtt', 'info', `MSG→${toNodeId}: ${text}`);
+    return true;
+  } catch (e) {
+    logger.log('mqtt', 'error', `publishMessage failed: ${e.message}`);
+    return false;
+  }
 }
 
 function sendNodeInfo(tacticalCallsign) {
