@@ -907,10 +907,29 @@ function publishMessage(toNodeId, text) {
   return true;
 }
 
+function sendNodeInfo(tacticalCallsign) {
+  if (!mqttClient || !mqttClient.connected || !currentConfig) return false;
+  const topic = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/!server`;
+  const payload = JSON.stringify({
+    from: 0,
+    to: 4294967295,
+    type: 'nodeinfo',
+    payload: { long_name: tacticalCallsign, short_name: 'NC' },
+  });
+  try {
+    mqttClient.publish(topic, payload);
+    logger.log('mqtt', 'info', `NodeInfo beacon: "${tacticalCallsign}"`);
+    return true;
+  } catch (e) {
+    logger.log('mqtt', 'error', `sendNodeInfo failed: ${e.message}`);
+    return false;
+  }
+}
+
 function invalidateRouteCache(raceId) {
   routeCache.delete(raceId);
   backfilledStationEvents.clear();
   participantPrevEff.clear();
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, invalidateRouteCache, handlePosition, handleTelemetry, auditMissedStations };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, sendNodeInfo, invalidateRouteCache, handlePosition, handleTelemetry, auditMissedStations };

@@ -404,6 +404,36 @@ function connectFromSettings(dbArg) {
   return true;
 }
 
+// ── Outbound beacons ──────────────────────────────────────────────────────────
+
+function _toAprsLat(deg) {
+  const abs = Math.abs(deg), d = Math.floor(abs), m = (abs - d) * 60;
+  return `${String(d).padStart(2,'0')}${m.toFixed(2).padStart(5,'0')}${deg >= 0 ? 'N' : 'S'}`;
+}
+function _toAprsLon(deg) {
+  const abs = Math.abs(deg), d = Math.floor(abs), m = (abs - d) * 60;
+  return `${String(d).padStart(3,'0')}${m.toFixed(2).padStart(5,'0')}${deg >= 0 ? 'E' : 'W'}`;
+}
+
+function sendObjectBeacon(lat, lon, name) {
+  if (!socket || !_connected || !currentConfig) return false;
+  const from    = currentConfig.callsign;
+  const objName = name.slice(0, 9).padEnd(9, ' ');
+  const now     = new Date();
+  const ts      = String(now.getUTCDate()).padStart(2,'0') +
+                  String(now.getUTCHours()).padStart(2,'0') +
+                  String(now.getUTCMinutes()).padStart(2,'0') + 'z';
+  const packet  = `${from}>APRS,TCPIP*,qAC,${from}:;${objName}*${ts}${_toAprsLat(lat)}/${_toAprsLon(lon)}o${name}\r\n`;
+  try {
+    socket.write(packet);
+    logger.log('aprs', 'info', `Beacon: "${name.trim()}" @ ${lat.toFixed(5)},${lon.toFixed(5)}`);
+    return true;
+  } catch (e) {
+    logger.log('aprs', 'error', `sendObjectBeacon failed: ${e.message}`);
+    return false;
+  }
+}
+
 // ── Outbound messaging ────────────────────────────────────────────────────────
 let _msgSeq = 0;
 
@@ -456,4 +486,4 @@ function previewFilter(filterType) {
   return buildFilter(filterType);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, generatePasscode, setMessagingCallsign };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, sendObjectBeacon, generatePasscode, setMessagingCallsign };

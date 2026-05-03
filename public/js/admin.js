@@ -297,6 +297,7 @@ async function openRaceModal(id) {
   const settings = sRes.ok ? sRes.data : {};
   document.getElementById('rm-mqtt-enabled').checked = settings.mqtt_enabled !== '0';
   document.getElementById('rm-aprs-enabled').checked = settings.aprs_enabled === '1';
+  document.getElementById('rm-tactical-callsign').value = race?.tactical_callsign || 'Net Control';
   // Populate course dropdown
   const cr = await RT.get('/api/courses');
   const cSel = document.getElementById('rm-course-id');
@@ -330,6 +331,7 @@ async function saveRace() {
     weather_enabled:     document.getElementById('rm-weather').checked ? 1 : 0,
     course_id:           courseVal ? parseInt(courseVal) : null,
     race_format:         document.getElementById('rm-race-format').value,
+    tactical_callsign:   document.getElementById('rm-tactical-callsign').value.trim() || 'Net Control',
     start_time:          parseTimeToUnix(document.getElementById('rm-start-time').value, document.getElementById('rm-date').value) ?? null,
     start_clearance:     _displayToM(parseInt(document.getElementById('rm-start-clearance').value) || 0, _raceModalDistUnit) || 400,
   };

@@ -178,8 +178,12 @@
       <div class="checkbox-row"><input type="checkbox" id="rm-mqtt-enabled"><label for="rm-mqtt-enabled">MQTT / Meshtastic</label></div>
       <div class="checkbox-row"><input type="checkbox" id="rm-aprs-enabled"><label for="rm-aprs-enabled">APRS-IS</label></div>
     </div>
-    <div style="font-size:12px;color:var(--text3);margin-top:4px">
-      Auto-enabled when Meshtastic (<code>!abcdef12</code>) or APRS callsign tracker IDs are saved to participants. Configure connection details in the <strong>DATASOURCES</strong> admin tab.
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+      <label for="rm-tactical-callsign" style="font-size:13px;white-space:nowrap;min-width:130px">Tactical Callsign</label>
+      <input id="rm-tactical-callsign" type="text" style="flex:1;font-size:13px" placeholder="Net Control" maxlength="20">
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-top:3px">
+      Sent as APRS object beacon (<code>/o</code>) and Meshtastic NodeInfo every 10 min. Add a <em>Net Control</em> station to the course map to provide the beacon location.
     </div>
     <div class="section-header">FEATURES</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
@@ -323,6 +327,8 @@
           <option value="finish">Finish</option>
           <option value="start_finish">Start/Finish (Out &amp; Back)</option>
           <option value="turnaround">Turnaround (Out &amp; Back)</option>
+          <option value="netcontrol">Net Control</option>
+          <option value="repeater">Repeater</option>
         </select>
       </div>
       <div class="form-group"><label>CUTOFF TIME (HH:MM)</label><input id="sm-cutoff" placeholder="optional"></div>
