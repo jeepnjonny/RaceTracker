@@ -208,6 +208,8 @@ function processLine(line) {
   const ts = Math.floor(Date.now() / 1000);
   try {
     const mqttClient = require('./mqtt-client');
+    // Store callsign as long_name so it appears in infrastructure and triggers tracker_info broadcast
+    mqttClient.handleNodeInfo({ nodeId: fromCall, longName: fromCall, shortName: null, hwModel: 'APRS', timestamp: ts });
     mqttClient.handlePosition({
       nodeId: fromCall,
       lat: pos.lat,
