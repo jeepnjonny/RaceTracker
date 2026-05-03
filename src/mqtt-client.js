@@ -889,7 +889,7 @@ function disconnect() {
 
 function getStatus() {
   const enabled = !!(currentConfig);
-  return { connected: !!(mqttClient && mqttClient.connected), enabled };
+  return { connected: !!(mqttClient && mqttClient.connected), enabled, host: currentConfig?.host || null };
 }
 
 // Publish an outbound text message to a specific node
