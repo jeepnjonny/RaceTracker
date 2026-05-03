@@ -10,6 +10,7 @@ let currentConfig = null;
 let lineBuffer = '';
 let reconnectTimer = null;
 let _connected = false;
+let _messagingCallsign = null; // set to logged-in user's callsign when available
 
 // Matches bare callsign or callsign-SSID (1–6 alphanum chars, SSID 1–15)
 const APRS_CALL_RE = /^[A-Z0-9]{1,6}(-(?:1[0-5]|[0-9]))?$/;
@@ -307,15 +308,12 @@ function connectFromSettings(dbArg) {
   let callsign = s.aprs_callsign.toUpperCase().trim();
   let passcode = s.aprs_passcode || '-1';
 
-  // If messaging is enabled for the active race, prefer a user callsign (allows sending)
+  // If messaging is enabled and a user is logged in with a callsign, use it (allows sending)
   const activeRace = _db.prepare("SELECT messaging_enabled FROM races WHERE status='active' LIMIT 1").get();
-  if (activeRace?.messaging_enabled) {
-    const u = _db.prepare("SELECT callsign FROM users WHERE callsign IS NOT NULL AND callsign != '' ORDER BY id LIMIT 1").get();
-    if (u) {
-      callsign = u.callsign.toUpperCase().trim();
-      passcode = String(generatePasscode(callsign));
-      logger.log('aprs', 'info', `Using user callsign ${callsign} (passcode auto-computed) for messaging`);
-    }
+  if (activeRace?.messaging_enabled && _messagingCallsign) {
+    callsign = _messagingCallsign;
+    passcode = String(generatePasscode(callsign));
+    logger.log('aprs', 'info', `Using user callsign ${callsign} (passcode auto-computed) for messaging`);
   }
 
   connect({
@@ -361,9 +359,14 @@ function notifyRosterChange() {
   }
 }
 
+// Called on login/logout to set the callsign used for authenticated messaging
+function setMessagingCallsign(callsign) {
+  _messagingCallsign = callsign ? callsign.toUpperCase().trim() : null;
+}
+
 // Compute the preview filter string without connecting (for the admin UI)
 function previewFilter(filterType) {
   return buildFilter(filterType);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, generatePasscode };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, generatePasscode, setMessagingCallsign };
