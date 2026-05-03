@@ -735,7 +735,10 @@ function processJsonMessage(msg) {
   const shortName = msg.short_name ?? msg.shortname
                  ?? msg.payload?.short_name ?? msg.payload?.shortname ?? null;
   const hwModel   = msg.hardware   ?? msg.payload?.hardware   ?? null;
-  if (longName || shortName || hwModel) {
+  // Only opportunistically capture identity here for message types that don't have a
+  // dedicated handleNodeInfo call below — otherwise nodeinfo/map_report would fire twice.
+  if ((longName || shortName || hwModel) &&
+      msg.type !== 'nodeinfo' && msg.type !== 'map_report') {
     handleNodeInfo({ nodeId: fromHex, longName, shortName, hwModel, timestamp: ts });
   }
 
