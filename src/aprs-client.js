@@ -481,9 +481,13 @@ function setMessagingCallsign(callsign) {
   _messagingCallsign = callsign ? callsign.toUpperCase().trim() : null;
 }
 
+function getActiveCallsign() {
+  return currentConfig?.callsign || null;
+}
+
 // Compute the preview filter string without connecting (for the admin UI)
 function previewFilter(filterType) {
   return buildFilter(filterType);
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, sendObjectBeacon, generatePasscode, setMessagingCallsign };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, notifyRosterChange, previewFilter, sendMessage, sendObjectBeacon, generatePasscode, setMessagingCallsign, getActiveCallsign };

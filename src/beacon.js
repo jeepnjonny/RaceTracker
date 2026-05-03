@@ -14,12 +14,12 @@ function sendBeacons() {
   if (!race) return;
 
   const name = (race.tactical_callsign || 'Net Control').trim();
+  const stn = db.prepare(
+    "SELECT lat, lon FROM stations WHERE race_id=? AND type='netcontrol' AND lat IS NOT NULL AND lon IS NOT NULL LIMIT 1"
+  ).get(race.id);
 
   // APRS object beacon — requires a Net Control station with a location
   if (aprsClient.getStatus().connected) {
-    const stn = db.prepare(
-      "SELECT lat, lon FROM stations WHERE race_id=? AND type='netcontrol' AND lat IS NOT NULL AND lon IS NOT NULL LIMIT 1"
-    ).get(race.id);
     if (stn) {
       aprsClient.sendObjectBeacon(stn.lat, stn.lon, name);
     } else {
@@ -27,9 +27,17 @@ function sendBeacons() {
     }
   }
 
-  // Meshtastic NodeInfo — no location required
+  // Meshtastic NodeInfo + position — derive a deterministic node ID from operator callsign
   if (mqttClient.getStatus().connected) {
-    mqttClient.sendNodeInfo(name);
+    const callsign = aprsClient.getActiveCallsign() ||
+      (db.prepare("SELECT value FROM settings WHERE key='aprs_callsign'").get() || {}).value ||
+      'NETCTRL';
+    const nodeId = mqttClient.callsignToNodeId(callsign);
+    mqttClient.setGatewayNodeId(nodeId);
+    mqttClient.sendNodeInfo(name, nodeId);
+    if (stn) {
+      mqttClient.sendPositionBeacon(stn.lat, stn.lon, nodeId);
+    }
   }
 }
 

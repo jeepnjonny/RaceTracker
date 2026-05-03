@@ -11,6 +11,21 @@ let protoRoot = null;
 let mqttClient = null;
 let wsRef = null;
 let currentConfig = null;
+let _gatewayNodeId = 0; // set from callsignToNodeId() by beacon scheduler
+
+// FNV-1a 32-bit — deterministic Meshtastic node ID derived from a callsign
+function callsignToNodeId(callsign) {
+  const s = (callsign || 'NETCTRL').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  const id = h >>> 0; // unsigned 32-bit
+  return (id === 0 || id === 0xffffffff) ? 0x00000001 : id;
+}
+
+function setGatewayNodeId(id) { _gatewayNodeId = id >>> 0; }
 
 const PORTNUM = { TEXT: 1, POSITION: 3, NODEINFO: 4, TELEMETRY: 67 };
 
@@ -938,7 +953,7 @@ function publishMessage(toNodeId, text) {
   const msgId  = (Date.now() & 0x7fffffff) >>> 0;
   const topic  = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/!server`;
   const packet = JSON.stringify({
-    from:      0,
+    from:      _gatewayNodeId || 0,
     to:        toNum,
     id:        msgId,
     type:      'text',
@@ -956,21 +971,50 @@ function publishMessage(toNodeId, text) {
   }
 }
 
-function sendNodeInfo(tacticalCallsign) {
+function sendNodeInfo(tacticalCallsign, nodeId) {
   if (!mqttClient || !mqttClient.connected || !currentConfig) return false;
-  const topic = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/!server`;
-  const payload = JSON.stringify({
-    from: 0,
-    to: 4294967295,
-    type: 'nodeinfo',
-    payload: { long_name: tacticalCallsign, short_name: 'NC' },
+  const from  = (nodeId || _gatewayNodeId || 0) >>> 0;
+  const topic = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/${nodeIdHex(from)}`;
+  const ts    = Math.floor(Date.now() / 1000);
+  const packet = JSON.stringify({
+    from,
+    to:        0xffffffff,
+    id:        (Date.now() & 0x7fffffff) >>> 0,
+    type:      'nodeinfo',
+    channel:   parseInt(currentConfig.channel) || 0,
+    payload:   { long_name: tacticalCallsign, short_name: 'NC', hw_model: 'PRIVATE_HW' },
+    timestamp: ts,
   });
   try {
-    mqttClient.publish(topic, payload);
-    logger.log('mqtt', 'info', `NodeInfo beacon: "${tacticalCallsign}"`);
+    mqttClient.publish(topic, packet);
+    logger.log('mqtt', 'info', `NodeInfo beacon: "${tacticalCallsign}" from ${nodeIdHex(from)}`);
     return true;
   } catch (e) {
     logger.log('mqtt', 'error', `sendNodeInfo failed: ${e.message}`);
+    return false;
+  }
+}
+
+function sendPositionBeacon(lat, lon, nodeId) {
+  if (!mqttClient || !mqttClient.connected || !currentConfig) return false;
+  const from  = (nodeId || _gatewayNodeId || 0) >>> 0;
+  const topic = `msh/${currentConfig.region}/2/json/${currentConfig.channel}/${nodeIdHex(from)}`;
+  const ts    = Math.floor(Date.now() / 1000);
+  const packet = JSON.stringify({
+    from,
+    to:        0xffffffff,
+    id:        ((Date.now() + 1) & 0x7fffffff) >>> 0,
+    type:      'position',
+    channel:   parseInt(currentConfig.channel) || 0,
+    payload:   { latitude_i: Math.round(lat * 1e7), longitude_i: Math.round(lon * 1e7), time: ts },
+    timestamp: ts,
+  });
+  try {
+    mqttClient.publish(topic, packet);
+    logger.log('mqtt', 'info', `Position beacon from ${nodeIdHex(from)}: ${lat.toFixed(5)},${lon.toFixed(5)}`);
+    return true;
+  } catch (e) {
+    logger.log('mqtt', 'error', `sendPositionBeacon failed: ${e.message}`);
     return false;
   }
 }
@@ -981,4 +1025,4 @@ function invalidateRouteCache(raceId) {
   participantPrevEff.clear();
 }
 
-module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, sendNodeInfo, invalidateRouteCache, handlePosition, handleTelemetry, auditMissedStations };
+module.exports = { connect, connectFromSettings, disconnect, getStatus, setWs, publishMessage, sendNodeInfo, sendPositionBeacon, callsignToNodeId, setGatewayNodeId, invalidateRouteCache, handlePosition, handleTelemetry, auditMissedStations };
