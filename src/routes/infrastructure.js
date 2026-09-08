@@ -30,7 +30,7 @@ function fetchInfra(raceId, onlyStationId) {
     SELECT n.*,
            s.name AS station_name, s.type AS station_type,
            r.long_name, r.short_name, r.battery_level, r.voltage, r.last_seen,
-           r.last_lat, r.last_lon, r.rf_tech,
+           r.last_lat, r.last_lon, r.rf_tech, r.node_id AS registry_node_id,
            COALESCE(r.last_lat, s.lat) AS resolved_lat,
            COALESCE(r.last_lon, s.lon) AS resolved_lon,
            CASE WHEN r.last_lat IS NOT NULL THEN 'gps'
@@ -71,6 +71,44 @@ router.get('/', requireAuth, (req, res) => {
   }
 
   return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
+});
+
+// Recent telemetry history for a single node's modal graph (battery/SNR/RSSI
+// over time). Sourced from tracker_positions, keyed off the *registry* node_id
+// resolved by fetchInfra (which may differ from the infra_nodes.node_id the
+// user typed, e.g. a longname/shortname alias) — nodes that have never
+// beaconed simply have no rows.
+router.get('/:id/history', requireAuth, (req, res) => {
+  const { role, id: userId } = req.session.user;
+  const raceId = req.params.raceId;
+
+  let accessible;
+  if (role === 'admin' || role === 'operator') {
+    accessible = fetchInfra(raceId);
+  } else if (role === 'station') {
+    const access = getStationRoleAccess(userId, raceId);
+    accessible = access.full ? fetchInfra(raceId) : (access.stationId ? fetchInfra(raceId, access.stationId) : []);
+  } else {
+    return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
+  }
+
+  const node = accessible.find(n => n.id === parseInt(req.params.id, 10));
+  if (!node) {
+    return res.status(404).json({ ok: false, error: 'infrastructure node not found' });
+  }
+  if (!node.registry_node_id) {
+    return res.json({ ok: true, data: [] });
+  }
+
+  const rows = db.prepare(`
+    SELECT timestamp, battery, snr, rssi FROM (
+      SELECT timestamp, battery, snr, rssi FROM tracker_positions
+      WHERE race_id = ? AND node_id = ?
+      ORDER BY timestamp DESC LIMIT 500
+    ) ORDER BY timestamp ASC
+  `).all(raceId, node.registry_node_id);
+
+  res.json({ ok: true, data: rows });
 });
 
 router.post('/', requireRole('admin', 'operator'), (req, res) => {

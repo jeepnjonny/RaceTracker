@@ -615,6 +615,18 @@
   </div>
 </div>
 
+<!-- Network Node History Modal: simple SVG line graph of a node's recent
+     battery telemetry, pulled from tracker_positions. -->
+<div class="modal-bg hidden" id="node-history-modal">
+  <div class="modal modal-wide">
+    <h2 id="node-history-modal-title">NODE HISTORY</h2>
+    <div id="node-history-chart"></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('node-history-modal')">CLOSE</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════════════
      SCRIPTS: Common utilities and admin-specific logic
      ═══════════════════════════════════════════════════════════════════ -->
