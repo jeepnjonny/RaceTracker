@@ -322,6 +322,16 @@ textarea { resize: vertical; min-height: 60px; }
 .data-table tr:hover td { background: var(--surface2); }
 .data-table tr.alert-row td { animation: blink 1.2s infinite; }
 .data-table tr.missing-row td { opacity: 0.45; }
+.data-table th.sortable { cursor: pointer; }
+.data-table th.sortable:hover { color: var(--text); }
+.sort-arrow { color: var(--accent); }
+
+/* ── HISTORY CHART (Network tab node graph modal) ───────────────────────── */
+.hist-chart { display: block; }
+.hist-grid { stroke: var(--border); stroke-width: 1; }
+.hist-axis { fill: var(--text3); font-size: 11px; }
+.hist-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.hist-dot { fill: var(--accent); }
 
 /* ── MISC UTILITIES ──────────────────────────────────────────────────────── */
 .text-accent  { color: var(--accent); }

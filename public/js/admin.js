@@ -1771,6 +1771,7 @@ async function clearAllPersonnel() {
 // This tab manages infra_nodes: race-scoped devices that can be assigned to a
 // station and pre-registered before they've ever beaconed.
 let infraNodes = [], networkQuery = '';
+let networkSort = { key: 'name', dir: 'asc' };
 
 function renderNetworkTab() {
   return `
@@ -1785,6 +1786,35 @@ function renderNetworkTab() {
 }
 
 function setNetworkQuery(v) { networkQuery = v; renderNetworkList(); }
+
+function setNetworkSort(key) {
+  if (networkSort.key === key) networkSort.dir = networkSort.dir === 'asc' ? 'desc' : 'asc';
+  else networkSort = { key, dir: 'asc' };
+  renderNetworkList();
+}
+
+const NETWORK_SORT_COLS = [
+  { key: 'name',         label: 'NAME' },
+  { key: 'node_type',    label: 'TYPE' },
+  { key: 'station_name', label: 'STATION' },
+  { key: 'node_id',      label: 'NODE ID' },
+  { key: 'battery_level',label: 'BATTERY' },
+  { key: 'last_seen',    label: 'LAST SEEN' },
+  { key: 'health',       label: 'HEALTH' },
+];
+
+function sortNetworkRows(rows) {
+  const { key, dir } = networkSort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * mul;
+    return (av - bv) * mul;
+  });
+}
 
 async function bindNetworkTab() {
   await loadStationsForNetwork();
@@ -1814,11 +1844,12 @@ function renderNetworkList() {
   if (!infraNodes.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No infrastructure registered yet.</div>'; return; }
   const filtered = RT.filterRows(infraNodes, networkQuery, [n => n.name, n => n.node_type, n => n.station_name, n => n.node_id]);
   if (!filtered.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No nodes match your search.</div>'; return; }
+  const sorted = sortNetworkRows(filtered);
 
   el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
-    <th>NAME</th><th>TYPE</th><th>STATION</th><th>NODE ID</th><th>BATTERY</th><th>LAST SEEN</th><th>HEALTH</th><th></th>
+    ${NETWORK_SORT_COLS.map(c => `<th class="sortable" onclick="setNetworkSort('${c.key}')">${c.label}${networkSort.key === c.key ? `<span class="sort-arrow">${networkSort.dir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</th>`).join('')}<th></th>
   </tr></thead><tbody>
-    ${filtered.map(n => `<tr style="${n.health === 'stale' || n.health === 'never_seen' ? 'opacity:0.6' : ''}">
+    ${sorted.map(n => `<tr style="${n.health !== 'ok' ? 'opacity:0.6' : ''}">
       <td>${n.name}</td>
       <td class="text-dim">${n.node_type}</td>
       <td>${n.station_name || '<span class="text-dim">— Unassigned —</span>'}</td>
@@ -1829,12 +1860,54 @@ function renderNetworkList() {
           style="cursor:pointer;font-weight:${n.health==='missing'?'bold':'normal'}${n.health==='warn'?';color:var(--accent4)':''}${n.health==='error'?';color:var(--accent3)':''}${n.health==='missing'?';color:#e53935':''}"
           onclick="openInfraTelemModal(${n.id})">${INFRA_HEALTH_LABEL[n.health]}</td>
       <td style="text-align:right">
+        ${n.registry_node_id ? `<button style="font-size:13px;padding:2px 8px" onclick="openNodeHistoryModal(${n.id})">GRAPH</button>` : ''}
         ${n.node_id ? `<button style="font-size:13px;padding:2px 8px" onclick="pingInfraNode(${n.id})">PING</button>` : ''}
         <button style="font-size:13px;padding:2px 8px" onclick="openInfraNodeModal(${n.id})">EDIT</button>
         <button class="danger" style="font-size:13px;padding:2px 8px" onclick="deleteInfraNode(${n.id})">DEL</button>
       </td>
     </tr>`).join('')}
   </tbody></table></div>`;
+}
+
+// ── Network node history graph (battery/signal over time, from tracker_positions) ──
+async function openNodeHistoryModal(id) {
+  const n = infraNodes.find(x => x.id === id);
+  if (!n) return;
+  document.getElementById('node-history-modal-title').textContent = `${n.name} — HISTORY`;
+  document.getElementById('node-history-chart').innerHTML = '<div class="text-dim" style="padding:20px">Loading…</div>';
+  document.getElementById('node-history-modal').classList.remove('hidden');
+  const res = await RT.get(`/api/races/${selectedRaceId}/infrastructure/${id}/history`);
+  const el = document.getElementById('node-history-chart');
+  if (!res.ok) { el.innerHTML = `<div class="text-warn" style="padding:20px">${res.error || 'Failed to load history'}</div>`; return; }
+  el.innerHTML = renderNodeHistorySvg(res.data);
+}
+
+function renderNodeHistorySvg(points) {
+  const pts = points.filter(p => p.battery != null);
+  if (!pts.length) return '<div class="text-dim" style="padding:20px">No battery history recorded yet.</div>';
+
+  const W = 620, H = 220, padL = 34, padR = 10, padT = 10, padB = 24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const tMin = pts[0].timestamp, tMax = pts[pts.length - 1].timestamp;
+  const tSpan = Math.max(tMax - tMin, 1);
+  const x = t => padL + ((t - tMin) / tSpan) * plotW;
+  const y = v => padT + (1 - v / 100) * plotH;
+
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.timestamp).toFixed(1)},${y(p.battery).toFixed(1)}`).join(' ');
+  const gridlines = [0, 25, 50, 75, 100].map(v => `
+    <line x1="${padL}" y1="${y(v)}" x2="${W - padR}" y2="${y(v)}" class="hist-grid"/>
+    <text x="${padL - 6}" y="${y(v) + 4}" text-anchor="end" class="hist-axis">${v}</text>`).join('');
+  const dots = pts.map(p => `<circle cx="${x(p.timestamp).toFixed(1)}" cy="${y(p.battery).toFixed(1)}" r="2.5" class="hist-dot"><title>${new Date(p.timestamp * 1000).toLocaleString()} — ${p.battery}%</title></circle>`).join('');
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" class="hist-chart">
+      ${gridlines}
+      <path d="${path}" class="hist-line"/>
+      ${dots}
+      <text x="${padL}" y="${H - 4}" class="hist-axis">${new Date(tMin * 1000).toLocaleString()}</text>
+      <text x="${W - padR}" y="${H - 4}" text-anchor="end" class="hist-axis">${new Date(tMax * 1000).toLocaleString()}</text>
+    </svg>
+    <div class="text-dim" style="font-size:13px;margin-top:4px">${pts.length} reading${pts.length === 1 ? '' : 's'} · battery %</div>`;
 }
 
 // Same detection the backend uses (messages.js APRS_CALL_RE) to pick the
