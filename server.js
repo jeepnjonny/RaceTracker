@@ -4,6 +4,7 @@ const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
 const express = require('express');
+require('express-async-errors'); // let thrown errors inside async route handlers reach the error middleware below
 const session = require('express-session');
 const db = require('./src/db');
 const { requireAuth, requireRole } = require('./src/auth');
@@ -15,8 +16,10 @@ const aprsClient = require('./src/aprs-client');
 const localTnc = require('./src/local-tnc');
 const lightning = require('./src/lightning');
 const beacon        = require('./src/beacon');
+const telemScheduler = require('./src/telem-scheduler');
 const inreachPoller = require('./src/inreach-poller');
 const spotPoller    = require('./src/spot-poller');
+const alertMonitor  = require('./src/alert-monitor');
 const PORT = process.env.PORT || 3000;
 
 // ── Global error safety net ───────────────────────────────────────────────────
@@ -37,9 +40,29 @@ const _cLog = console.log.bind(console), _cWarn = console.warn.bind(console), _c
 console.log   = (...a) => { _cLog(...a);  logger.log('console', 'info',  a.map(_fmtArg).join(' ')); };
 console.warn  = (...a) => { _cWarn(...a); logger.log('console', 'warn',  a.map(_fmtArg).join(' ')); };
 console.error = (...a) => { _cErr(...a);  logger.log('console', 'error', a.map(_fmtArg).join(' ')); };
-const SESSION_SECRET = process.env.SESSION_SECRET || 'racetracker-secret-' + Math.random().toString(36);
+// Persisted so sessions survive a process restart. env var still wins if set.
+// data/ is never touched by update.sh, so this file (and thus every logged-in
+// session) survives updates as well as restarts.
+function getSessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const crypto = require('crypto');
+  const secretFile = path.join(__dirname, 'data', 'session-secret.txt');
+  try {
+    return fs.readFileSync(secretFile, 'utf8').trim();
+  } catch {
+    const secret = crypto.randomBytes(48).toString('hex');
+    fs.mkdirSync(path.dirname(secretFile), { recursive: true });
+    fs.writeFileSync(secretFile, secret, { mode: 0o600 });
+    return secret;
+  }
+}
+const SESSION_SECRET = getSessionSecret();
 
 const app = express();
+// Trust the single nginx reverse-proxy hop (see nginx-coursesentry.conf) so
+// req.ip resolves to the real client IP from X-Forwarded-For — required for
+// express-rate-limit to key correctly (it also warnings on-error otherwise).
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -70,7 +93,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // ── Viewer page (token-gated, no login) ──────────────────────────────────────
 app.get('/view/:token', (req, res) => {
-  const race = db.prepare('SELECT id FROM races WHERE viewer_token=?').get(req.params.token);
+  const race = db.prepare('SELECT id FROM races WHERE UPPER(viewer_token) = UPPER(?)').get(req.params.token);
   if (!race) return res.status(404).send('Race not found or viewer link has been revoked.');
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
@@ -290,6 +313,7 @@ aprsClient.setWs(wsManager);
 localTnc.setWs(wsManager);
 logger.setWs(wsManager);
 lightning.setWs(wsManager);
+alertMonitor.setWs(wsManager);
 
 // ── Auto-connect on startup ───────────────────────────────────────────────────
 const mqttOk = mqttClient.connectFromSettings(db);
@@ -304,8 +328,10 @@ lightning.connect();
 console.log('[server] Connecting to Blitzortung lightning feed');
 
 beacon.start();
+telemScheduler.start();
 inreachPoller.start();
 spotPoller.start();
+alertMonitor.start();
 
 server.listen(PORT, () => {
   console.log(`[server] CourseSentry listening on port ${PORT}`);

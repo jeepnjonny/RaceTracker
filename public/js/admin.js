@@ -223,9 +223,7 @@ function renderRaceList() {
         ${r.status==='active'?`<button onclick="event.stopPropagation();deactivateRace(${r.id})" class="danger" style="font-size:13px;padding:3px 8px">DEACTIVATE</button>`:''}
         <button onclick="event.stopPropagation();openRaceModal(${r.id})" style="font-size:13px;padding:3px 8px">EDIT</button>
         <button onclick="event.stopPropagation();cloneRace(${r.id})" style="font-size:13px;padding:3px 8px">CLONE</button>
-        ${r.viewer_token?`<button onclick="event.stopPropagation();copyViewerLink('${r.viewer_token}')" style="font-size:13px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>
-         <button onclick="event.stopPropagation();revokeViewerToken(${r.id})" class="danger" style="font-size:13px;padding:3px 8px">REVOKE</button>`
-         :`<button onclick="event.stopPropagation();genViewerToken(${r.id})" style="font-size:13px;padding:3px 8px">GEN VIEWER</button>`}
+        ${r.viewer_token?`<button onclick="event.stopPropagation();copyViewerLink('${r.viewer_token}')" style="font-size:13px;padding:3px 8px;color:var(--accent4)">VIEWER LINK</button>`:''}
         ${r.status!=='active'?`<button onclick="event.stopPropagation();deleteRace(${r.id})" class="danger" style="font-size:13px;padding:3px 8px">DEL</button>`:''}
       </div>
     </div>
@@ -283,24 +281,18 @@ async function deleteRace(id) {
   else RT.toast(res.error, 'warn');
 }
 
-async function genViewerToken(id) {
-  const res = await RT.post(`/api/races/${id}/viewer-token`);
-  if (res.ok) {
-    await loadRaces(); renderTab();
-    copyViewerLink(res.data.token);
-  }
-}
-
-function copyViewerLink(token) {
+function copyViewerLink(token, { open = true } = {}) {
   const url = `${location.origin}${RT.BASE}view/${token}`;
-  window.open(url, '_blank');
-  navigator.clipboard.writeText(url).then(() => RT.toast('Viewer URL opened and copied to clipboard', 'ok'));
+  if (open) window.open(url, '_blank');
+  navigator.clipboard.writeText(url).then(() => RT.toast(open ? 'Viewer URL opened and copied to clipboard' : 'Viewer URL copied to clipboard', 'ok'));
 }
 
-async function revokeViewerToken(id) {
-  if (!confirm('Revoke viewer link? Existing users will lose access.')) return;
-  await RT.del(`/api/races/${id}/viewer-token`);
-  await loadRaces(); renderTab();
+// Grays out the sub-options in "Viewer Page Options" while the master
+// "Enable Public Viewer Link" checkbox is off, since they have no effect.
+function toggleViewerOptions() {
+  const enabled = document.getElementById('rm-viewer-enabled').checked;
+  ['rm-viewer-map', 'rm-leaderboard', 'rm-weather', 'rm-show-names', 'rm-viewer-nametags']
+    .forEach(id => { document.getElementById(id).disabled = !enabled; });
 }
 
 async function cloneRace(id) {
@@ -371,6 +363,8 @@ async function openRaceModal(id) {
   document.getElementById('rm-feat-auto-log').checked   = !!(race?.feat_auto_log  ?? 1);
   document.getElementById('rm-feat-off-course').checked = !!(race?.feat_off_course ?? 1);
   document.getElementById('rm-feat-stopped').checked    = !!(race?.feat_stopped    ?? 1);
+  document.getElementById('rm-telem-query-enabled').checked = !!(race?.telem_query_enabled);
+  document.getElementById('rm-telem-query-interval').value  = Math.round((race?.telem_query_interval || 3600) / 60);
   document.getElementById('rm-messaging').checked    = !!(race?.messaging_enabled);
   document.getElementById('rm-offline-maps').checked = !!(race?.offline_maps);
   document.getElementById('rm-viewer-map').checked       = !!(race?.viewer_map_enabled ?? 1);
@@ -378,6 +372,8 @@ async function openRaceModal(id) {
   document.getElementById('rm-weather').checked          = !!(race?.weather_enabled);
   document.getElementById('rm-show-names').checked       = !!(race?.viewer_show_names ?? 1);
   document.getElementById('rm-viewer-nametags').checked  = !!(race?.viewer_nametags);
+  document.getElementById('rm-viewer-enabled').checked   = !!(race?.viewer_token);
+  toggleViewerOptions();
   document.getElementById('rm-race-format').value    = race?.race_format || 'point_to_point';
   document.getElementById('rm-start-time').value      = unixToTimeStr(race?.start_time);
   document.getElementById('rm-start-clearance').value  = _mToDisplay(race?.start_clearance ?? 400, modalUnits);
@@ -437,6 +433,8 @@ async function saveRace() {
     feat_auto_log:       document.getElementById('rm-feat-auto-log').checked   ? 1 : 0,
     feat_off_course:     document.getElementById('rm-feat-off-course').checked ? 1 : 0,
     feat_stopped:        document.getElementById('rm-feat-stopped').checked    ? 1 : 0,
+    telem_query_enabled:  document.getElementById('rm-telem-query-enabled').checked ? 1 : 0,
+    telem_query_interval: parseInt(document.getElementById('rm-telem-query-interval').value) * 60,
     messaging_enabled:   document.getElementById('rm-messaging').checked ? 1 : 0,
     offline_maps:        document.getElementById('rm-offline-maps').checked ? 1 : 0,
     viewer_map_enabled:  document.getElementById('rm-viewer-map').checked ? 1 : 0,
@@ -453,10 +451,21 @@ async function saveRace() {
     spot_feed_id:        document.getElementById('rm-spot-feed-id').value.trim() || null,
     spot_feed_password:  document.getElementById('rm-spot-feed-password').value.trim() || null,
   };
+  const wasViewerEnabled  = !!(editingRaceId && races.find(r => r.id === editingRaceId)?.viewer_token);
+  const wantViewerEnabled = document.getElementById('rm-viewer-enabled').checked;
+
   const res = editingRaceId
     ? await RT.put(`/api/races/${editingRaceId}`, body)
     : await RT.post('/api/races', body);
   if (res.ok) {
+    const raceId = editingRaceId || res.data?.id;
+    if (wantViewerEnabled && !wasViewerEnabled) {
+      const tokenRes = await RT.post(`/api/races/${raceId}/viewer-token`);
+      if (tokenRes.ok) copyViewerLink(tokenRes.data.token, { open: false });
+    } else if (!wantViewerEnabled && wasViewerEnabled) {
+      await RT.del(`/api/races/${raceId}/viewer-token`);
+    }
+
     closeModal('race-modal');
     if (!editingRaceId && res.data?.id) {
       await loadRaces();
@@ -1125,7 +1134,7 @@ function renderParticipantsTab() {
         <span id="pt-csv-label" style="font-size:14px">&#8593; Select CSV file</span>
         <input type="file" id="pt-csv-input" accept=".csv" style="display:none" onchange="ptCsvSelected(this)">
       </div>
-      <div id="pt-csv-error" style="font-size:14px;color:var(--accent3);margin-top:6px;display:none"></div>
+      <div id="pt-csv-error" style="font-size:14px;color:var(--accent3);margin-top:6px;display:none;white-space:pre-line"></div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="primary" id="pt-csv-btn" onclick="importParticipantsCsv()" disabled>IMPORT</button>
         <button onclick="togglePtCsvPanel()">CANCEL</button>
@@ -1438,12 +1447,19 @@ async function importParticipantsCsv() {
   const res = await RT.post(`/api/races/${selectedRaceId}/participants/import`, { csv: participantsCsvContent });
   if (res.ok) {
     const errors = res.errors || [];
-    document.getElementById('pt-csv-panel').classList.add('hidden');
     participants = res.data || [];
     renderParticipantSummary();
     renderParticipantsList();
     RT.toast(`Imported ${participants.length} participants${errors.length ? ` (${errors.length} skipped)` : ''}`, errors.length ? 'warn' : 'ok');
-    if (errors.length) console.warn('Import errors:', errors);
+    const errEl = document.getElementById('pt-csv-error');
+    if (errors.length) {
+      // Leave the panel open so the admin can see exactly which rows failed
+      // (textContent + pre-line, not innerHTML — error text embeds raw CSV values).
+      errEl.textContent = errors.join('\n');
+      errEl.style.display = 'block';
+    } else {
+      document.getElementById('pt-csv-panel').classList.add('hidden');
+    }
   } else RT.toast(res.error, 'warn');
 }
 
@@ -1483,6 +1499,7 @@ function renderPersonnelTab() {
         <div id="pers-csv-label">&#8593; Select CSV file</div>
         <input type="file" id="pers-csv-input" accept=".csv" style="display:none" onchange="personnelCsvSelected(this)">
       </div>
+      <div id="pers-csv-error" style="font-size:14px;color:var(--accent3);margin-top:6px;display:none;white-space:pre-line"></div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="primary" id="pers-csv-btn" disabled onclick="importPersonnelCsv()">IMPORT</button>
         <button onclick="document.getElementById('pers-csv-panel').classList.add('hidden')">CANCEL</button>
@@ -1496,6 +1513,8 @@ function showPersonnelCsvPanel() {
   personnelCsvContent = '';
   document.getElementById('pers-csv-label').textContent = '↑ Select CSV file';
   document.getElementById('pers-csv-btn').disabled = true;
+  const errEl = document.getElementById('pers-csv-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
   document.getElementById('pers-csv-panel').classList.remove('hidden');
 }
 
@@ -1526,9 +1545,18 @@ async function importPersonnelCsv() {
   if (!personnelCsvContent) return;
   const res = await RT.post(`/api/races/${selectedRaceId}/personnel/import`, { csv: personnelCsvContent });
   if (res.ok) {
-    RT.toast('Personnel imported', 'ok');
-    document.getElementById('pers-csv-panel').classList.add('hidden');
+    const errors = res.errors || [];
+    RT.toast(`Personnel imported${errors.length ? ` (${errors.length} issue${errors.length === 1 ? '' : 's'})` : ''}`, errors.length ? 'warn' : 'ok');
     await loadPersonnel();
+    const errEl = document.getElementById('pers-csv-error');
+    if (errors.length) {
+      // Leave the panel open so the admin can see exactly which rows had issues
+      // (textContent + pre-line, not innerHTML — error text embeds raw CSV values).
+      errEl.textContent = errors.join('\n');
+      errEl.style.display = 'block';
+    } else {
+      document.getElementById('pers-csv-panel').classList.add('hidden');
+    }
   } else RT.toast(res.error, 'warn');
 }
 
@@ -1801,7 +1829,7 @@ async function loadStationsForNetwork() {
   if (sr.ok) stations = sr.data;
 }
 
-const INFRA_HEALTH_LABEL = { ok: 'OK', stale: 'STALE', never_seen: 'NEVER SEEN' };
+const INFRA_HEALTH_LABEL = { ok: 'OK', stale: 'STALE', never_seen: 'NEVER SEEN', warn: 'WARN', error: 'ERROR', missing: 'MISSING' };
 
 async function loadInfraNodes() {
   if (!selectedRaceId) return;
@@ -1828,7 +1856,9 @@ function renderNetworkList() {
       <td class="text-accent">${n.node_id || '<span class="text-dim">—</span>'}</td>
       <td>${n.battery_level != null ? RT.fmtBattery(n.battery_level) : '—'}</td>
       <td>${n.last_seen ? RT.timeAgo(n.last_seen) : '—'}</td>
-      <td class="${n.health === 'stale' ? 'text-warn' : n.health === 'never_seen' ? 'text-dim' : 'text-accent2'}">${INFRA_HEALTH_LABEL[n.health]}</td>
+      <td class="${{stale:'text-warn', never_seen:'text-dim', ok:'text-ok', warn:'', error:'', missing:''}[n.health]}"
+          style="cursor:pointer;font-weight:${n.health==='missing'?'bold':'normal'}${n.health==='warn'?';color:var(--accent4)':''}${n.health==='error'?';color:var(--accent3)':''}${n.health==='missing'?';color:#e53935':''}"
+          onclick="openInfraTelemModal(${n.id})">${INFRA_HEALTH_LABEL[n.health]}</td>
       <td style="text-align:right">
         ${n.registry_node_id ? `<button style="font-size:13px;padding:2px 8px" onclick="openNodeHistoryModal(${n.id})">GRAPH</button>` : ''}
         ${n.node_id ? `<button style="font-size:13px;padding:2px 8px" onclick="pingInfraNode(${n.id})">PING</button>` : ''}
@@ -1889,7 +1919,7 @@ async function pingInfraNode(id) {
   const n = infraNodes.find(x => x.id === id);
   if (!n?.node_id) return;
   const target = n.node_id.trim();
-  const text = NETWORK_APRS_CALL_RE.test(target) ? '?PING?' : 'ping';
+  const text = NETWORK_APRS_CALL_RE.test(target) ? '?TELEM?' : 'ping';
   const res = await RT.post(`/api/races/${selectedRaceId}/messages`, { to_node_id: target, to_name: n.name, text });
   if (res.ok) RT.toast(`Ping sent to ${n.name}`, 'ok');
   else RT.toast(res.error || 'Ping failed', 'warn');
@@ -1936,6 +1966,67 @@ async function deleteInfraNode(id) {
   const res = await RT.del(`/api/races/${selectedRaceId}/infrastructure/${id}`);
   if (res.ok) await loadInfraNodes();
   else RT.toast(res.error || 'Failed', 'warn');
+}
+
+function openInfraTelemModal(id) {
+  const n = infraNodes.find(x => x.id === id);
+  if (!n) return;
+  document.getElementById('infra-telem-modal-title').textContent = `TELEMETRY — ${n.name}`;
+  document.getElementById('infra-telem-current').innerHTML = renderTelemCurrent(n);
+  document.getElementById('infra-telem-history').innerHTML = '<div class="text-dim" style="padding:6px">Loading…</div>';
+  document.getElementById('infra-telem-modal').classList.remove('hidden');
+  RT.get(`/api/races/${selectedRaceId}/infrastructure/${id}/telemetry`).then(res => {
+    document.getElementById('infra-telem-history').innerHTML = renderTelemHistory(res.ok ? res.data : [], n.node_type);
+  });
+}
+
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return h ? `${h}h${m}m` : `${m}m`;
+}
+
+function renderTelemCurrent(n) {
+  // Mirrors routes/infrastructure.js's computeHealth(): a poll_missed row newer
+  // than the last successful reply/beacon means the most recent ?TELEM? query
+  // went unanswered, even though BATT/UP/etc below still show the last known
+  // good values (a missed poll doesn't erase what we previously learned).
+  const missed = n.poll_missed_ts != null && (n.telem_ts == null || n.poll_missed_ts > n.telem_ts);
+  const rows = [
+    ['REPORTED', n.telem_ts != null ? _fmtLogStyleTimestamp(n.telem_ts) : '—'],
+    ['BATT', n.telem_battery_pct != null ? n.telem_battery_pct + '%' : 'NA'],
+    ['UP',   n.telem_uptime_sec  != null ? fmtUptime(n.telem_uptime_sec) : '—'],
+  ];
+  if (n.node_type === 'igate') rows.push(['IS', n.telem_is_state || '—']);
+  if (n.node_type === 'digipeater' || n.node_type === 'igate') rows.push(['RPT', n.telem_rpt_count ?? '—']);
+  if (n.node_type === 'igate') rows.push(['GATE', n.telem_gate_count ?? '—']);
+  const missedBanner = missed
+    ? `<div style="color:#e53935;font-weight:bold;padding:2px 0 6px">MISSED POLL — no reply since ${_fmtLogStyleTimestamp(n.poll_missed_ts)}</div>`
+    : '';
+  return missedBanner + rows.map(([k, v]) => `<div style="display:flex;justify-content:space-between;padding:2px 0"><span class="text-dim">${k}</span><span>${v}</span></div>`).join('');
+}
+
+// Same absolute date+time format as the SYSTEM LOG tab's buildLogRow() — the
+// history table is a diagnostic record, so exact timestamps matter more here
+// than the relative "N minutes ago" style used for the network table's LAST SEEN.
+function _fmtLogStyleTimestamp(unixSec) {
+  const d = new Date(unixSec * 1000);
+  const clock = d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${clock}`;
+}
+
+const _TELEM_SRC_LABEL = { telem_reply: 'TELEM', status_beacon: 'BEACON', poll_missed: 'MISSED' };
+
+function renderTelemHistory(rows, nodeType) {
+  if (!rows.length) return '<div class="text-dim" style="padding:6px">No telemetry in the last 24 hours.</div>';
+  const showIgate = nodeType === 'igate', showRpt = nodeType === 'digipeater' || nodeType === 'igate';
+  return `<table class="data-table"><thead><tr><th>TIME</th><th>SRC</th><th>BATT</th>${showIgate ? '<th>IS</th>' : ''}${showRpt ? '<th>RPT</th>' : ''}${showIgate ? '<th>GATE</th>' : ''}</tr></thead><tbody>
+    ${rows.map(r => {
+      const missed = r.source === 'poll_missed';
+      return `<tr${missed ? ' style="color:#e53935"' : ''}><td>${_fmtLogStyleTimestamp(r.timestamp)}</td><td${missed ? '' : ' class="text-dim"'}>${_TELEM_SRC_LABEL[r.source] || r.source}</td>
+      <td>${missed ? '—' : (r.battery_pct != null ? r.battery_pct + '%' : 'NA')}</td>
+      ${showIgate ? `<td>${missed ? '—' : (r.is_state || '—')}</td>` : ''}${showRpt ? `<td>${missed ? '—' : (r.rpt_count ?? '—')}</td>` : ''}${showIgate ? `<td>${missed ? '—' : (r.gate_count ?? '—')}</td>` : ''}
+    </tr>`;
+    }).join('')}</tbody></table>`;
 }
 
 // ── Infrastructure ────────────────────────────────────────────────────────────

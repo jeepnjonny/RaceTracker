@@ -428,12 +428,15 @@ try {
   db.prepare("UPDATE races SET speed_display='speed' WHERE speed_units IN ('mph','kmh') AND speed_display='pace'").run();
 } catch {}
 
+// ── User profile fields (map color/shape, contact info) + personnel↔user linking ──
 try { db.prepare('ALTER TABLE users ADD COLUMN callsign TEXT').run(); } catch {}
 try { db.prepare('ALTER TABLE users ADD COLUMN phone TEXT').run(); } catch {}
 try { db.prepare("ALTER TABLE users ADD COLUMN color TEXT DEFAULT '#f5a623'").run(); } catch {}
 try { db.prepare("ALTER TABLE users ADD COLUMN shape TEXT DEFAULT 'triangle'").run(); } catch {}
 try { db.prepare('ALTER TABLE personnel ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL').run(); } catch {}
 try { db.prepare('CREATE INDEX IF NOT EXISTS idx_personnel_user ON personnel(user_id)').run(); } catch {}
+
+// ── Message status default change + race tactical callsign / viewer toggles ──
 try { db.prepare("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'enroute'").run(); } catch {}
 try { db.prepare("ALTER TABLE races ADD COLUMN tactical_callsign TEXT NOT NULL DEFAULT 'NETCTL'").run(); } catch {}
 // ALTER TABLE can't change an existing column's default, so migrate rows still
@@ -443,12 +446,16 @@ try { db.prepare('ALTER TABLE races ADD COLUMN viewer_show_names INTEGER NOT NUL
 try { db.prepare("ALTER TABLE personnel ADD COLUMN color TEXT NOT NULL DEFAULT '#f5a623'").run(); } catch {}
 try { db.prepare("ALTER TABLE personnel ADD COLUMN shape TEXT NOT NULL DEFAULT 'triangle'").run(); } catch {}
 try { db.prepare('ALTER TABLE participants ADD COLUMN inreach_url TEXT').run(); } catch {}
+
+// ── Offline maps, RF path default, viewer nametags, TNC toggle, session tokens ──
 try { db.prepare('ALTER TABLE races ADD COLUMN offline_maps INTEGER NOT NULL DEFAULT 0').run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN offline_maps_status TEXT DEFAULT NULL').run(); } catch {}
 try { db.prepare("ALTER TABLE races ADD COLUMN rf_path TEXT NOT NULL DEFAULT 'WIDE1-1'").run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN viewer_nametags INTEGER NOT NULL DEFAULT 0').run(); } catch {}
 try { db.prepare('ALTER TABLE races ADD COLUMN tnc_enabled INTEGER NOT NULL DEFAULT 1').run(); } catch {}
 try { db.prepare('ALTER TABLE users ADD COLUMN active_session_token TEXT').run(); } catch {}
+
+// ── Rover personnel + global APRS iGate setting ───────────────────────────────
 try { db.prepare('ALTER TABLE personnel ADD COLUMN is_rover INTEGER NOT NULL DEFAULT 0').run(); } catch {}
 try { db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('aprs_igate_enabled', '0')").run(); } catch {}
 // SPOT Trace satellite tracker feed — per-race shared page; a race uses SPOT
@@ -483,6 +490,67 @@ try { db.prepare('ALTER TABLE personnel ADD COLUMN is_sweep INTEGER NOT NULL DEF
 try { db.prepare('ALTER TABLE personnel ADD COLUMN spot_feed_id TEXT').run(); } catch {}
 try { db.prepare('ALTER TABLE personnel ADD COLUMN spot_feed_password TEXT').run(); } catch {}
 try { db.prepare('ALTER TABLE personnel ADD COLUMN inreach_url TEXT').run(); } catch {}
+
+// Infrastructure ?TELEM? protocol: per-race auto-query toggle/interval, plus a
+// history log of parsed telemetry (explicit ?TELEM? replies and passive
+// voltage-bearing status beacons) backing the health tiers and 24h popup in
+// routes/infrastructure.js.
+try { db.prepare('ALTER TABLE races ADD COLUMN telem_query_enabled INTEGER NOT NULL DEFAULT 0').run(); } catch {}
+try { db.prepare('ALTER TABLE races ADD COLUMN telem_query_interval INTEGER NOT NULL DEFAULT 3600').run(); } catch {}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS infra_telemetry (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  infra_node_id INTEGER NOT NULL REFERENCES infra_nodes(id) ON DELETE CASCADE,
+  race_id       INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
+  timestamp     INTEGER NOT NULL,
+  source        TEXT    NOT NULL CHECK(source IN ('telem_reply','status_beacon','poll_missed')),
+  battery_pct   INTEGER,
+  voltage       REAL,
+  uptime_sec    INTEGER,
+  is_state      TEXT    CHECK(is_state IN ('RW','R','DOWN')),
+  rpt_count     INTEGER,
+  gate_count    INTEGER,
+  raw_text      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_infra_telemetry_node ON infra_telemetry(infra_node_id, timestamp DESC);
+`);
+
+// Add 'poll_missed' to infra_telemetry.source (table rebuild required for CHECK
+// constraint change) — logged when a ?TELEM? query goes unacknowledged after
+// retries, so the network tab can show a MISSING health tier distinct from a
+// stale/never-seen node that we simply haven't tried to reach recently.
+{
+  const infraTelemetryDDL = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='infra_telemetry'").get();
+  if (infraTelemetryDDL && !infraTelemetryDDL.sql.includes('poll_missed')) {
+    db.exec(`
+      CREATE TABLE infra_telemetry_new (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        infra_node_id INTEGER NOT NULL REFERENCES infra_nodes(id) ON DELETE CASCADE,
+        race_id       INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
+        timestamp     INTEGER NOT NULL,
+        source        TEXT    NOT NULL CHECK(source IN ('telem_reply','status_beacon','poll_missed')),
+        battery_pct   INTEGER,
+        voltage       REAL,
+        uptime_sec    INTEGER,
+        is_state      TEXT    CHECK(is_state IN ('RW','R','DOWN')),
+        rpt_count     INTEGER,
+        gate_count    INTEGER,
+        raw_text      TEXT
+      );
+      INSERT INTO infra_telemetry_new SELECT * FROM infra_telemetry;
+      DROP TABLE infra_telemetry;
+      ALTER TABLE infra_telemetry_new RENAME TO infra_telemetry;
+      CREATE INDEX IF NOT EXISTS idx_infra_telemetry_node ON infra_telemetry(infra_node_id, timestamp DESC);
+    `);
+  }
+}
+
+// Schema generation marker — purely a debugging aid (nothing in the app reads
+// it back). Bump by 1 whenever a new migration block is appended above this
+// line, so `sqlite3 data/db.sqlite 'PRAGMA user_version'` tells support which
+// schema generation a deployed DB is on without eyeballing every ALTER block.
+db.pragma('user_version = 3');
 
 // Clear all session tokens on startup — in-memory session store is wiped on restart
 // so any stored tokens are orphaned and would wrongly block re-login.
