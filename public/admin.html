@@ -634,6 +634,19 @@
   </div>
 </div>
 
+<!-- Device Config Modal: remote CSR/CSU/CSW read + write against a node's
+     SSID, opened by clicking its NODE ID in the NETWORK or INFRASTRUCTURE
+     tabs. All content is rebuilt by dcRenderModal() in admin.js. -->
+<div class="modal-bg hidden" id="device-config-modal">
+  <div class="modal modal-wide">
+    <h2 id="device-config-modal-title">DEVICE CONFIG</h2>
+    <div id="device-config-body"></div>
+    <div class="modal-footer">
+      <button onclick="closeDeviceConfigModal()">CLOSE</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════════════
      SCRIPTS: Common utilities and admin-specific logic
      ═══════════════════════════════════════════════════════════════════ -->

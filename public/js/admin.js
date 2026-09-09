@@ -1853,7 +1853,7 @@ function renderNetworkList() {
       <td>${n.name}</td>
       <td class="text-dim">${n.node_type}</td>
       <td>${n.station_name || '<span class="text-dim">— Unassigned —</span>'}</td>
-      <td class="text-accent">${n.node_id || '<span class="text-dim">—</span>'}</td>
+      <td>${n.node_id ? `<a href="#" class="text-accent" onclick="openDeviceConfigModal('${n.node_id.replace(/'/g, "\\'")}','${(n.name || '').replace(/'/g, "\\'")}');return false">${n.node_id}</a>` : '<span class="text-dim">—</span>'}</td>
       <td>${n.battery_level != null ? RT.fmtBattery(n.battery_level) : '—'}</td>
       <td>${n.last_seen ? RT.timeAgo(n.last_seen) : '—'}</td>
       <td class="${{stale:'text-warn', never_seen:'text-dim', ok:'text-ok', warn:'', error:'', missing:''}[n.health]}"
@@ -1966,6 +1966,233 @@ async function deleteInfraNode(id) {
   const res = await RT.del(`/api/races/${selectedRaceId}/infrastructure/${id}`);
   if (res.ok) await loadInfraNodes();
   else RT.toast(res.error || 'Failed', 'warn');
+}
+
+// ── Device config (remote CSR/CSU/CSW protocol against a node's SSID) ──────────
+// Mirrors src/device-config.js field metadata — kept in sync manually since
+// there's no build step to share it between server and browser.
+const DC_FIELD_CODES = [
+  { code: 'RO', label: 'Device role',            type: 'enum',  values: { 0: 'Tracker', 1: 'iGate', 2: 'Digipeater' } },
+  { code: 'TC', label: 'Tactical callsign/name', type: 'string' },
+  { code: 'SY', label: 'Symbol',                 type: 'string' },
+  { code: 'BP', label: 'Beacon path',            type: 'string' },
+  { code: 'DM', label: 'Digi mode',              type: 'enum',  values: { 0: 'Off', 1: 'WIDE1 fill-in', 2: 'WIDE1+WIDE2 infrastructure' } },
+  { code: 'BR', label: 'Beacon rate (min)',      type: 'int',   min: 1,    max: 1440 },
+  { code: 'GS', label: 'GPS source',             type: 'enum',  values: { 0: 'Internal GPS', 1: 'Fixed position', 2: 'None' } },
+  { code: 'LA', label: 'Fixed latitude',         type: 'float', min: -90,  max: 90 },
+  { code: 'LO', label: 'Fixed longitude',        type: 'float', min: -180, max: 180 },
+  { code: 'EL', label: 'Fixed elevation (m)',    type: 'float', min: -500, max: 9000 },
+];
+
+let dc = null; // active modal state, see openDeviceConfigModal()
+
+function _dcFieldMeta(code) { return DC_FIELD_CODES.find(f => f.code === code); }
+
+function _dcDecodeValue(code, raw) {
+  const meta = _dcFieldMeta(code);
+  if (!meta || raw == null) return raw;
+  if (meta.type === 'enum') return meta.values[raw] != null ? `${meta.values[raw]} (${raw})` : raw;
+  return raw;
+}
+
+function openDeviceConfigModal(callsign, name) {
+  if (!selectedRaceId) { RT.toast('Select a race first to configure devices', 'warn'); return; }
+  dc = {
+    callsign, name,
+    reading: false, readFields: null, readError: null,
+    unlockToken: '', unlocking: false, unlockError: null, lockoutSecs: null,
+    unlockDeadline: null, unlockSecsLeft: null, countdownTimer: null,
+    writing: false, writeResult: null, writeError: null,
+    rebootUntil: null,
+  };
+  document.getElementById('device-config-modal').classList.remove('hidden');
+  dcRenderModal();
+  dcRead();
+}
+
+function closeDeviceConfigModal() {
+  if (dc?.countdownTimer) clearInterval(dc.countdownTimer);
+  dc = null;
+  document.getElementById('device-config-modal').classList.add('hidden');
+}
+
+function _dcBusy() { return dc && (dc.reading || dc.unlocking || dc.writing); }
+
+async function dcRead(retryOnToofast = true) {
+  if (!dc) return;
+  dc.reading = true; dc.readError = null; dcRenderModal();
+  const res = await RT.post(`/api/races/${selectedRaceId}/device-config/read`, { callsign: dc.callsign });
+  if (!dc) return; // modal closed while awaiting
+  dc.reading = false;
+  if (!res.ok) { dc.readError = res.error || 'Read failed'; dcRenderModal(); return; }
+  const reply = res.data;
+  if (reply.type === 'ERR' && reply.code === 'TOOFAST' && retryOnToofast) {
+    dc.readError = 'Device busy (TOOFAST) — retrying…';
+    dcRenderModal();
+    setTimeout(() => dcRead(false), 4000);
+    return;
+  }
+  if (reply.type === 'ERR') {
+    dc.readError = `Device error: ${reply.code}${reply.detail ? ' ' + reply.detail : ''}`;
+  } else {
+    dc.readFields = reply.fields;
+    dc.readError = null;
+  }
+  dcRenderModal();
+}
+
+async function dcUnlock(retryOnToofast = true) {
+  if (!dc) return;
+  const tokenInput = document.getElementById('dc-token');
+  const token = (tokenInput ? tokenInput.value : dc.unlockToken || '').trim();
+  if (!token) { RT.toast('Enter the unlock token', 'warn'); return; }
+  dc.unlockToken = token;
+  dc.unlocking = true; dc.unlockError = null; dc.lockoutSecs = null; dcRenderModal();
+  const res = await RT.post(`/api/races/${selectedRaceId}/device-config/unlock`, { callsign: dc.callsign, token });
+  if (!dc) return;
+  dc.unlocking = false;
+  if (!res.ok) { dc.unlockError = res.error || 'Unlock failed'; dcRenderModal(); return; }
+  const reply = res.data;
+  if (reply.type === 'ERR' && reply.code === 'TOOFAST' && retryOnToofast) {
+    dc.unlockError = 'Device busy (TOOFAST) — retrying…';
+    dcRenderModal();
+    setTimeout(() => dcUnlock(false), 4000);
+    return;
+  }
+  if (reply.type === 'ERR' && (reply.code === 'BADTOKEN' || reply.code === 'LOCKED_OUT')) {
+    // Per protocol: never auto-retry a rejected token — that's the brute-force
+    // pattern the device's 5-attempt lockout defends against. Surface it and stop.
+    dc.unlockError = reply.code === 'LOCKED_OUT'
+      ? `Locked out — too many wrong tokens. Try again in ${reply.detail || '?'}s.`
+      : 'Incorrect unlock token.';
+    dc.lockoutSecs = reply.code === 'LOCKED_OUT' ? parseInt(reply.detail, 10) || null : null;
+  } else if (reply.type === 'ERR') {
+    dc.unlockError = `Device error: ${reply.code}${reply.detail ? ' ' + reply.detail : ''}`;
+  } else if (reply.type === 'UNLOCKED') {
+    dc.unlockError = null;
+    dc.unlockDeadline = Date.now() + (reply.secondsRemaining || 0) * 1000;
+    _dcStartCountdown();
+  }
+  dcRenderModal();
+}
+
+function _dcStartCountdown() {
+  if (dc.countdownTimer) clearInterval(dc.countdownTimer);
+  dc.countdownTimer = setInterval(() => {
+    if (!dc || !dc.unlockDeadline) return;
+    const left = Math.max(0, Math.round((dc.unlockDeadline - Date.now()) / 1000));
+    dc.unlockSecsLeft = left;
+    if (left <= 0) {
+      clearInterval(dc.countdownTimer);
+      dc.unlockDeadline = null;
+    }
+    dcRenderModal();
+  }, 1000);
+}
+
+async function dcWrite(retryOnToofast = true) {
+  if (!dc) return;
+  const fields = {};
+  for (const meta of DC_FIELD_CODES) {
+    const el = document.getElementById(`dc-w-${meta.code}`);
+    const v = el ? String(el.value).trim() : '';
+    if (v !== '') fields[meta.code] = v;
+  }
+  if (!Object.keys(fields).length) { RT.toast('Enter at least one field to change', 'warn'); return; }
+
+  dc.writing = true; dc.writeError = null; dc.writeResult = null; dcRenderModal();
+  const res = await RT.post(`/api/races/${selectedRaceId}/device-config/write`, { callsign: dc.callsign, fields });
+  if (!dc) return;
+  dc.writing = false;
+  if (!res.ok) { dc.writeError = res.error || 'Write failed'; dcRenderModal(); return; }
+  const reply = res.data;
+  if (reply.type === 'ERR' && reply.code === 'TOOFAST' && retryOnToofast) {
+    dc.writeError = 'Device busy (TOOFAST) — retrying…';
+    dcRenderModal();
+    setTimeout(() => dcWrite(false), 4000);
+    return;
+  }
+  if (reply.type === 'ERR' && reply.code === 'LOCKED') {
+    dc.writeError = 'Write window expired or lost — unlock again before writing.';
+    dc.unlockDeadline = null;
+  } else if (reply.type === 'ERR') {
+    dc.writeError = `Rejected: ${reply.code}${reply.detail ? ' ' + reply.detail : ''} — batch stopped, nothing else was sent.`;
+  } else if (reply.type === 'OK') {
+    dc.writeResult = reply.fields;
+    dc.readFields = { ...(dc.readFields || {}), ...reply.fields }; // reflect applied values immediately
+    if (reply.reboot != null) {
+      dc.rebootUntil = Date.now() + reply.reboot * 1000;
+      dc.unlockDeadline = null;
+      setTimeout(() => { if (dc) { dc.rebootUntil = null; dcRenderModal(); } }, reply.reboot * 1000);
+    }
+  }
+  dcRenderModal();
+}
+
+function dcRenderModal() {
+  const el = document.getElementById('device-config-body');
+  if (!el || !dc) return;
+  document.getElementById('device-config-modal-title').textContent = `DEVICE CONFIG — ${dc.name || dc.callsign} (${dc.callsign})`;
+
+  const rebootBanner = dc.rebootUntil
+    ? `<div class="text-warn" style="padding:8px;margin-bottom:10px;border:1px solid var(--border)">Node is rebooting — expect it to be unreachable for a few more seconds before retrying.</div>`
+    : '';
+
+  // ── Stage 1: read ──
+  let readSection;
+  if (dc.reading) {
+    readSection = '<div class="text-dim">Reading…</div>';
+  } else if (dc.readError) {
+    readSection = `<div class="text-warn">${dc.readError}</div>`;
+  } else if (dc.readFields) {
+    readSection = `<table class="data-table"><thead><tr><th>CODE</th><th>FIELD</th><th>VALUE</th></tr></thead><tbody>
+      ${DC_FIELD_CODES.map(m => dc.readFields[m.code] != null
+        ? `<tr><td class="text-accent">${m.code}</td><td>${m.label}</td><td>${_dcDecodeValue(m.code, dc.readFields[m.code])}</td></tr>`
+        : '').join('')}
+    </tbody></table>`;
+  } else {
+    readSection = '<div class="text-dim">No data yet.</div>';
+  }
+
+  // ── Stage 2: unlock ──
+  const unlocked = dc.unlockDeadline && dc.unlockDeadline > Date.now();
+  const unlockError = dc.unlockError ? `<div class="text-warn" style="margin-top:6px">${dc.unlockError}</div>` : '';
+  const unlockSection = unlocked
+    ? `<div class="text-accent2">Write window open — ${dc.unlockSecsLeft ?? ''}s remaining</div>${unlockError}`
+    : `<div class="form-row">
+         <div class="form-group"><label>UNLOCK TOKEN</label><input id="dc-token" type="password" placeholder="shared secret" value="${dc.unlockToken || ''}"></div>
+       </div>
+       <button ${_dcBusy() ? 'disabled' : ''} onclick="dcUnlock()">${dc.unlocking ? 'UNLOCKING…' : 'UNLOCK'}</button>
+       ${unlockError}`;
+
+  // ── Stage 2: write form (only usable while unlocked) ──
+  const writeError = dc.writeError ? `<div class="text-warn" style="margin-top:6px">${dc.writeError}</div>` : '';
+  const writeResult = dc.writeResult
+    ? `<div class="text-accent2" style="margin-top:6px">Applied: ${Object.entries(dc.writeResult).map(([k, v]) => `${k}=${v}`).join(', ') || '(none)'}</div>`
+    : '';
+  const writeSection = unlocked
+    ? `<div class="text-dim" style="font-size:13px;margin:6px 0">Leave a field blank to skip it. Writing LA/LO/EL requires GS=1 already set or included in the same batch.</div>
+       ${DC_FIELD_CODES.map(m => `
+         <div class="form-group" style="display:inline-block;width:220px;margin-right:8px">
+           <label>${m.code} — ${m.label}</label>
+           ${m.type === 'enum'
+             ? `<select id="dc-w-${m.code}"><option value="">— no change —</option>${Object.entries(m.values).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>`
+             : `<input id="dc-w-${m.code}" placeholder="no change">`}
+         </div>`).join('')}
+       <div style="margin-top:8px">
+         <button class="primary" ${_dcBusy() ? 'disabled' : ''} onclick="dcWrite()">${dc.writing ? 'WRITING…' : 'APPLY CHANGES'}</button>
+       </div>
+       ${writeError}${writeResult}`
+    : '<div class="text-dim">Unlock the write window to change fields.</div>';
+
+  el.innerHTML = `
+    ${rebootBanner}
+    <h3 style="margin-top:0">STATUS <button style="float:right;font-size:13px;padding:2px 8px" ${_dcBusy() ? 'disabled' : ''} onclick="dcRead()">REFRESH</button></h3>
+    ${readSection}
+    <h3>UNLOCK &amp; WRITE</h3>
+    ${unlockSection}
+    ${writeSection}
+  `;
 }
 
 function openInfraTelemModal(id) {
@@ -2097,7 +2324,7 @@ function renderInfraList() {
         }
       }
       return `<tr style="${missing?'opacity:0.45':''}">
-        <td class="text-accent">${t.node_id}</td>
+        <td><a href="#" class="text-accent" onclick="openDeviceConfigModal('${t.node_id.replace(/'/g, "\\'")}','${(t.long_name || t.node_id || '').replace(/'/g, "\\'")}');return false">${t.node_id}</a></td>
         <td>${t.long_name||'—'}</td>
         <td>${t.short_name||'—'}</td>
         <td>${t.battery_level!=null?RT.fmtBattery(t.battery_level):'—'}</td>

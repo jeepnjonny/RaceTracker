@@ -255,6 +255,9 @@ function handleIncomingFrame(ws, { from, to, via, text }) {
       if (myCall && addressee === myCall) {
         // Strip optional trailing '}' some clients append to ack/rej lines
         const bodyNorm = body.replace(/\}$/, '');
+        // Device-config CSR/CSU/CSW replies ("CS ...") bypass the
+        // messaging_enabled gate below — they're an admin operation, not chat.
+        try { require('./device-config').handleInboundReply(from, bodyNorm); } catch (e) { /* not a pending device-config reply */ }
         if (/^ack\d+$/i.test(bodyNorm)) {
           // ACK for an outbound message we sent via TNC
           const ackSeq = parseInt(bodyNorm.slice(3));

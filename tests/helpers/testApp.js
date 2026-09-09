@@ -40,6 +40,7 @@ function createApp() {
   raceRouter.use('/events',         require('../../src/routes/events'));
   raceRouter.use('/personnel',      require('../../src/routes/personnel'));
   raceRouter.use('/infrastructure', require('../../src/routes/infrastructure'));
+  raceRouter.use('/device-config', require('../../src/routes/device-config'));
   app.use('/api/races/:raceId', raceRouter);
 
   app.use((err, req, res, _next) => {
