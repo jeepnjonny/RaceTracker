@@ -95,10 +95,19 @@ function _sendDirected(raceId, targetCallsign, text) {
   const aprsClient = require('./aprs-client');
   const localTnc   = require('./local-tnc');
 
-  const aprsConnected = aprsClient.isConnected();
-  const tncRaceIds    = localTnc.getConnectedRaceIds().filter(id => String(id) === String(raceId));
-  if (!aprsConnected && tncRaceIds.length === 0) {
-    throw _err('No APRS path available: APRS-IS not connected and no local TNC active for this race', 'NO_TRANSPORT');
+  // isConnected() only means the TCP socket is up — an unverified login (bad
+  // passcode) still connects and receives fine, but the server silently
+  // discards anything we transmit. Without checking verified too, this would
+  // "succeed" here and then just burn the full 20s command timeout for
+  // nothing, instead of failing immediately with a reason an operator can act on.
+  const aprsStatus  = aprsClient.getStatus();
+  const aprsUsable  = aprsClient.isConnected() && aprsStatus.verified;
+  const tncRaceIds  = localTnc.getConnectedRaceIds().filter(id => String(id) === String(raceId));
+  if (!aprsUsable && tncRaceIds.length === 0) {
+    const reason = aprsClient.isConnected() && !aprsStatus.verified
+      ? 'APRS-IS is connected but the login is unverified (bad passcode), so transmitted packets are silently dropped by the server — check the callsign/passcode in Settings, or connect a local TNC for this race'
+      : 'No APRS path available: APRS-IS not connected and no local TNC active for this race';
+    throw _err(reason, 'NO_TRANSPORT');
   }
 
   const race = db.prepare('SELECT tactical_callsign FROM races WHERE id=?').get(raceId);
@@ -109,7 +118,7 @@ function _sendDirected(raceId, targetCallsign, text) {
   `).run(raceId, 'out', race?.tactical_callsign || null, 'device-config', targetCallsign, text, ts, 'queued');
   const messageId = result.lastInsertRowid;
 
-  if (aprsConnected) aprsClient.sendMessage(targetCallsign, text, messageId);
+  if (aprsUsable) aprsClient.sendMessage(targetCallsign, text, messageId);
   for (const rId of tncRaceIds) localTnc.sendMessage(rId, { toCallsign: targetCallsign, text, messageId });
 }
 

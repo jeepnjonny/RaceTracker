@@ -12,7 +12,9 @@ const mockAprs = {
   setMessagingCallsign: jest.fn(),
   connectFromSettings: jest.fn(),
   disconnect: jest.fn(),
-  getStatus: jest.fn(() => ({ connected: false })),
+  // verified mirrors isConnected by default, matching a healthy login — tests
+  // for the unverified case override this explicitly.
+  getStatus: jest.fn(() => ({ connected: mockAprs.isConnected(), verified: mockAprs.isConnected() })),
   setWs: jest.fn(),
   notifyRosterChange: jest.fn(),
   refreshFilter: jest.fn(),
@@ -66,6 +68,19 @@ describe('Device Config API', () => {
     const res = await admin.post(`/api/races/${raceId}/device-config/read`).send({ callsign: 'KJ7NYE-9' });
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('NO_TRANSPORT');
+  });
+
+  test('read fails fast (not a 20s timeout) when APRS-IS is connected but unverified', async () => {
+    // A bad/unmatched passcode still lets the TCP connection open and receive,
+    // but the server silently drops everything we transmit — this must be
+    // treated the same as "no transport" rather than attempted and hung.
+    mockAprs.isConnected.mockReturnValue(true);
+    mockAprs.getStatus.mockReturnValueOnce({ connected: true, verified: false });
+    const res = await admin.post(`/api/races/${raceId}/device-config/read`).send({ callsign: 'KJ7NYE-9' });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('NO_TRANSPORT');
+    expect(res.body.error).toMatch(/unverified/i);
+    expect(mockAprs.sendMessage).not.toHaveBeenCalled();
   });
 
   test('read resolves with parsed fields once the device replies', async () => {

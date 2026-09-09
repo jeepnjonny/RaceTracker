@@ -1000,8 +1000,36 @@ async function seedWaypointsToRace() {
 
 // ── Race stations ─────────────────────────────────────────────────────────────
 let stations = [], stationQuery = '';
+let stationSort = { key: 'name', dir: 'asc' };
 
 function setStationQuery(v) { stationQuery = v; renderStationsList(); }
+
+function setStationSort(key) {
+  if (stationSort.key === key) stationSort.dir = stationSort.dir === 'asc' ? 'desc' : 'asc';
+  else stationSort = { key, dir: 'asc' };
+  renderStationsList();
+}
+
+const STATION_SORT_COLS = [
+  { key: 'name',        label: 'NAME' },
+  { key: 'type',        label: 'TYPE' },
+  { key: 'lat',         label: 'LAT' },
+  { key: 'lon',         label: 'LON' },
+  { key: 'cutoff_time', label: 'CUTOFF' },
+];
+
+function sortStationRows(rows) {
+  const { key, dir } = stationSort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * mul;
+    return (av - bv) * mul;
+  });
+}
 
 async function loadStations() {
   if (!selectedRaceId) return;
@@ -1034,8 +1062,11 @@ function renderStationsList() {
   if (!stations.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No stations yet. Seed from a course file above, or add manually.</div>'; return; }
   const filtered = RT.filterRows(stations, stationQuery, [s => s.name, s => s.type]);
   if (!filtered.length) { el.innerHTML = stationWarningHtml() + '<div class="text-dim" style="font-size:16px;padding:6px">No stations match your search.</div>'; return; }
-  el.innerHTML = stationWarningHtml() + `<div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>LAT</th><th>LON</th><th>CUTOFF</th><th></th></tr></thead><tbody>
-    ${filtered.map((s, i) => `<tr>
+  const sorted = sortStationRows(filtered);
+  el.innerHTML = stationWarningHtml() + `<div class="table-scroll"><table class="data-table"><thead><tr><th>#</th>
+    ${STATION_SORT_COLS.map(c => `<th class="sortable" onclick="setStationSort('${c.key}')">${c.label}${stationSort.key === c.key ? `<span class="sort-arrow">${stationSort.dir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</th>`).join('')}<th></th>
+  </tr></thead><tbody>
+    ${sorted.map((s, i) => `<tr>
       <td class="text-dim">${i + 1}</td>
       <td>${s.name}</td>
       <td><span class="badge" style="color:var(--accent4)">${s.type.toUpperCase()}</span></td>
@@ -1093,8 +1124,47 @@ async function deleteStation(id) {
 // ── Participants ──────────────────────────────────────────────────────────────
 let participants = [], participantsCsvContent = '', participantQuery = '';
 let _visibleParticipants = []; // rows currently shown after search filtering — "select all" scope
+let participantSort = { key: 'bib', dir: 'asc' };
 
 function setParticipantQuery(v) { participantQuery = v; renderParticipantsList(); }
+
+function setParticipantSort(key) {
+  if (participantSort.key === key) participantSort.dir = participantSort.dir === 'asc' ? 'desc' : 'asc';
+  else participantSort = { key, dir: 'asc' };
+  renderParticipantsList();
+}
+
+const PARTICIPANT_SORT_COLS = [
+  { key: 'bib',     label: 'BIB' },
+  { key: 'name',    label: 'NAME' },
+  { key: 'heat',    label: 'HEAT' },
+  { key: 'class',   label: 'CLASS' },
+  { key: 'tracker', label: 'TRACKER' },
+  { key: 'status',  label: 'STATUS' },
+  { key: 'age',     label: 'AGE' },
+];
+
+function participantSortValue(p, key) {
+  if (key === 'heat')    return heats.find(h => h.id === p.heat_id)?.name || '';
+  if (key === 'class')   return classes.find(c => c.id === p.class_id)?.name || '';
+  if (key === 'tracker') return trackerSearchText(p);
+  return p[key];
+}
+
+function sortParticipantRows(rows) {
+  const { key, dir } = participantSort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let av = participantSortValue(a, key), bv = participantSortValue(b, key);
+    if (av === '') av = null;
+    if (bv === '') bv = null;
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * mul;
+    return (av - bv) * mul;
+  });
+}
 let editingParticipantId = null;
 let selectedParticipantIds = new Set();
 
@@ -1205,17 +1275,20 @@ function renderParticipantsList() {
   }
   const STATUS_C = { dns:'var(--text3)', active:'var(--accent)', dnf:'var(--accent3)', finished:'var(--accent2)' };
   const filtered = RT.filterRows(participants, participantQuery, [p => p.bib, p => p.name, p => trackerSearchText(p), p => p.status]);
-  _visibleParticipants = filtered;
   if (!filtered.length) {
+    _visibleParticipants = [];
     el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No participants match your search.</div>';
     return;
   }
+  const sorted = sortParticipantRows(filtered);
+  _visibleParticipants = sorted;
   el.innerHTML = `<div class="table-scroll"><table class="data-table">
     <thead><tr>
       <th style="width:28px"><input type="checkbox" id="pt-select-all" onchange="toggleSelectAllParticipants(this.checked)" title="Select all"></th>
-      <th>#</th><th>BIB</th><th>NAME</th><th>HEAT</th><th>CLASS</th><th>TRACKER</th><th>STATUS</th><th>AGE</th><th></th>
+      <th>#</th>
+      ${PARTICIPANT_SORT_COLS.map(c => `<th class="sortable" onclick="setParticipantSort('${c.key}')">${c.label}${participantSort.key === c.key ? `<span class="sort-arrow">${participantSort.dir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</th>`).join('')}<th></th>
     </tr></thead>
-    <tbody>${filtered.map((p, i) => {
+    <tbody>${sorted.map((p, i) => {
       const heat = heats.find(h => h.id === p.heat_id);
       const cls  = classes.find(c => c.id === p.class_id);
       const dot  = heat ? `<span class="dot" style="background:${heat.color}"></span>` : '';
@@ -1480,6 +1553,40 @@ function exportParticipantsCsv() {
 
 // ── Personnel ─────────────────────────────────────────────────────────────────
 let personnel = [], personnelCsvContent = '', personnelQuery = '';
+let personnelSort = { key: 'name', dir: 'asc' };
+
+function setPersonnelSort(key) {
+  if (personnelSort.key === key) personnelSort.dir = personnelSort.dir === 'asc' ? 'desc' : 'asc';
+  else personnelSort = { key, dir: 'asc' };
+  renderPersonnelList();
+}
+
+const PERSONNEL_SORT_COLS = [
+  { key: 'name',       label: 'NAME' },
+  { key: 'station',    label: 'STATION' },
+  { key: 'tracker_id', label: 'TRACKER ID' },
+  { key: 'phone',      label: 'PHONE' },
+];
+
+function personnelSortValue(p, key) {
+  if (key === 'station') return p.is_rover ? 'ROVER' : p.is_sweep ? 'SWEEP' : (p.station_name || '');
+  return p[key];
+}
+
+function sortPersonnelRows(rows) {
+  const { key, dir } = personnelSort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let av = personnelSortValue(a, key), bv = personnelSortValue(b, key);
+    if (av === '') av = null;
+    if (bv === '') bv = null;
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * mul;
+    return (av - bv) * mul;
+  });
+}
 
 function setPersonnelQuery(v) { personnelQuery = v; renderPersonnelList(); }
 function renderPersonnelTab() {
@@ -1580,8 +1687,11 @@ function renderPersonnelList() {
   const filtered = RT.filterRows(personnel, personnelQuery,
     [p => p.name, p => p.is_rover ? 'rover' : p.is_sweep ? 'sweep' : p.station_name, p => p.tracker_id, p => p.phone]);
   if (!filtered.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No personnel match your search.</div>'; return; }
-  el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>NAME</th><th>STATION</th><th>TRACKER ID</th><th>PHONE</th><th></th></tr></thead><tbody>
-    ${filtered.map(p => `<tr>
+  const sorted = sortPersonnelRows(filtered);
+  el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
+    ${PERSONNEL_SORT_COLS.map(c => `<th class="sortable" onclick="setPersonnelSort('${c.key}')">${c.label}${personnelSort.key === c.key ? `<span class="sort-arrow">${personnelSort.dir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</th>`).join('')}<th></th>
+  </tr></thead><tbody>
+    ${sorted.map(p => `<tr>
       <td>${p.name}</td>
       <td>${p.is_rover ? '<span style="color:var(--accent);font-size:12px;letter-spacing:1px">ROVER</span>'
         : p.is_sweep ? '<span style="color:#f5a623;font-size:12px;letter-spacing:1px">SWEEP</span>'
@@ -2324,7 +2434,7 @@ function renderInfraList() {
         }
       }
       return `<tr style="${missing?'opacity:0.45':''}">
-        <td><a href="#" class="text-accent" onclick="openDeviceConfigModal('${t.node_id.replace(/'/g, "\\'")}','${(t.long_name || t.node_id || '').replace(/'/g, "\\'")}');return false">${t.node_id}</a></td>
+        <td>${t.node_id}</td>
         <td>${t.long_name||'—'}</td>
         <td>${t.short_name||'—'}</td>
         <td>${t.battery_level!=null?RT.fmtBattery(t.battery_level):'—'}</td>
@@ -2730,7 +2840,14 @@ async function testMqtt() {
 function updateAprsPill(status) {
   const light = document.getElementById('aprs-light');
   if (!light) return;
-  if (status.connected) {
+  if (status.connected && status.verified === false) {
+    // Socket is up and receiving fine, but the passcode didn't verify — the
+    // server silently drops everything we try to transmit (messages, pings,
+    // device-config commands, beacons), so this needs to stand out from a
+    // normal healthy connection rather than just looking "ok".
+    light.className = 'ds-light ds-light-error';
+    light.title = `APRS: Connected but UNVERIFIED — check the callsign/passcode in Settings. Reads work but nothing you send will reach the network.`;
+  } else if (status.connected) {
     light.className = 'ds-light ds-light-ok';
     light.title = `APRS: Connected${status.server ? ' · ' + status.server : ''}`;
   } else if (status.enabled) {
