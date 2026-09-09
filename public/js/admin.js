@@ -2195,8 +2195,15 @@ function _dcStartCountdown() {
     if (left <= 0) {
       clearInterval(dc.countdownTimer);
       dc.unlockDeadline = null;
+      dcRenderModal(); // window expired — full re-render to fall back to the locked view
+      return;
     }
-    dcRenderModal();
+    // Patch just the countdown number in place instead of a full dcRenderModal()
+    // rebuild — that would recreate the write form's <select>/<input> elements
+    // every second, closing any open dropdown and dropping whatever was typed.
+    const span = document.getElementById('dc-countdown');
+    if (span) span.textContent = left;
+    else dcRenderModal(); // element missing for some reason — fall back to a full render
   }, 1000);
 }
 
@@ -2268,7 +2275,7 @@ function dcRenderModal() {
   const unlocked = dc.unlockDeadline && dc.unlockDeadline > Date.now();
   const unlockError = dc.unlockError ? `<div class="text-warn" style="margin-top:6px">${dc.unlockError}</div>` : '';
   const unlockSection = unlocked
-    ? `<div class="text-accent2">Write window open — ${dc.unlockSecsLeft ?? ''}s remaining</div>${unlockError}`
+    ? `<div class="text-accent2">Write window open — <span id="dc-countdown">${dc.unlockSecsLeft ?? ''}</span>s remaining</div>${unlockError}`
     : `<div class="form-row">
          <div class="form-group"><label>UNLOCK TOKEN</label><input id="dc-token" type="password" placeholder="shared secret" value="${dc.unlockToken || ''}"></div>
        </div>
