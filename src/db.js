@@ -552,10 +552,6 @@ CREATE INDEX IF NOT EXISTS idx_infra_telemetry_node ON infra_telemetry(infra_nod
 // schema generation a deployed DB is on without eyeballing every ALTER block.
 db.pragma('user_version = 3');
 
-// Clear all session tokens on startup — in-memory session store is wiped on restart
-// so any stored tokens are orphaned and would wrongly block re-login.
-db.prepare('UPDATE users SET active_session_token = NULL').run();
-
 // Seed default admin on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();
 if (userCount.c === 0) {

@@ -66,7 +66,11 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Persist sessions in the app's existing SQLite db so they survive restarts and
+// don't leak memory the way express-session's default MemoryStore does.
+const SqliteStore = require('better-sqlite3-session-store')(session);
 const sessionMiddleware = session({
+  store: new SqliteStore({ client: db, expired: { clear: true, intervalMs: 900000 } }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
