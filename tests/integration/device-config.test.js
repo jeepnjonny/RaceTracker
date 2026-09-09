@@ -90,12 +90,12 @@ describe('Device Config API', () => {
         .end((err, r) => err ? reject(err) : resolve(r));
     });
     await new Promise(r => setTimeout(r, 20));
-    deviceConfig.handleInboundReply('KJ7NYE-9', 'CS RO=2 TC=BASE1 BR=15');
+    deviceConfig.handleInboundReply('KJ7NYE-9', 'CS RO=2 TC=BASE1 BR=900');
     const res = await pending;
 
     expect(res.status).toBe(200);
     expect(res.body.data.type).toBe('READ');
-    expect(res.body.data.fields).toEqual({ RO: '2', TC: 'BASE1', BR: '15' });
+    expect(res.body.data.fields).toEqual({ RO: '2', TC: 'BASE1', BR: '900' });
     expect(mockAprs.sendMessage).toHaveBeenCalledWith('KJ7NYE-9', 'CSR', expect.any(Number));
   });
 
