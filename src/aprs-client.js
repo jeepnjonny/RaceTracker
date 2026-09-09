@@ -317,6 +317,10 @@ function sendAck(toCallsign, seq) {
 
 // ── Inbound message handling ──────────────────────────────────────────────────
 function handleInboundMessage(fromCall, text) {
+  // Device-config CSR/CSU/CSW replies ("CS ...") are resolved here regardless
+  // of race lookup below — lazy require avoids a require-cycle at module load.
+  try { require('./device-config').handleInboundReply(fromCall, text); } catch (e) { /* not a pending device-config reply */ }
+
   const person = db.prepare(`
     SELECT p.*, r.id AS race_id FROM personnel p
     JOIN races r ON r.id = p.race_id
