@@ -32,6 +32,7 @@ function csvParse(text) {
   return { headers, rows };
 }
 const { requireAuth, requireRole } = require('../auth');
+const { historySince } = require('../utils/history-range');
 const wsManager = require('../websocket');
 const aprsClient = require('../aprs-client');
 const mqttClient = require('../mqtt-client');
@@ -112,6 +113,35 @@ router.get('/:id/trail', requireAuth, (req, res) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const rows = stmtTrail.all(req.params.raceId, p.tracker_id, p.tracker_id, p.tracker_id, limit);
   res.json({ ok: true, data: rows.reverse() }); // oldest → newest, ready to draw as a line
+});
+
+const stmtBatteryHistory = db.prepare(`
+  SELECT tp.timestamp, tp.battery AS battery_pct
+  FROM tracker_positions tp
+  LEFT JOIN tracker_registry tr ON tr.node_id = tp.node_id
+  WHERE tp.race_id = ?
+    AND tp.battery IS NOT NULL
+    AND tp.timestamp >= ?
+    AND (
+      UPPER(tp.node_id) = UPPER(?)
+      OR UPPER(tr.long_name) = UPPER(?)
+      OR UPPER(tr.short_name) = UPPER(?)
+    )
+  ORDER BY tp.timestamp ASC
+  LIMIT 5000
+`);
+
+// Battery-over-time for the participant's tracker — powers the same history
+// graph modal as the Network tab's node history, keyed off tracker_positions
+// instead of infra_telemetry since participant trackers aren't infra nodes.
+router.get('/:id/battery-history', requireAuth, (req, res) => {
+  const p = db.prepare('SELECT id, tracker_id FROM participants WHERE id=? AND race_id=?').get(req.params.id, req.params.raceId);
+  if (!p) return res.status(404).json({ ok: false, error: 'Participant not found' });
+  if (!p.tracker_id) return res.json({ ok: true, data: [] });
+
+  const since = historySince(req.query.range);
+  const rows = stmtBatteryHistory.all(req.params.raceId, since, p.tracker_id, p.tracker_id, p.tracker_id);
+  res.json({ ok: true, data: rows });
 });
 
 router.post('/', requireRole('admin', 'operator'), (req, res) => {

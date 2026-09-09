@@ -1140,6 +1140,7 @@ const PARTICIPANT_SORT_COLS = [
   { key: 'heat',    label: 'HEAT' },
   { key: 'class',   label: 'CLASS' },
   { key: 'tracker', label: 'TRACKER' },
+  { key: 'battery', label: 'BATTERY' },
   { key: 'status',  label: 'STATUS' },
   { key: 'age',     label: 'AGE' },
 ];
@@ -1148,6 +1149,7 @@ function participantSortValue(p, key) {
   if (key === 'heat')    return heats.find(h => h.id === p.heat_id)?.name || '';
   if (key === 'class')   return classes.find(c => c.id === p.class_id)?.name || '';
   if (key === 'tracker') return trackerSearchText(p);
+  if (key === 'battery') return p.tracker?.battery_level;
   return p[key];
 }
 
@@ -1300,6 +1302,7 @@ function renderParticipantsList() {
         <td style="white-space:nowrap">${dot} ${heat?.name || '<span class="text-dim">—</span>'}</td>
         <td>${cls?.name || '<span class="text-dim">—</span>'}</td>
         <td style="font-size:13px;color:var(--accent4)">${trackerCell(p)}</td>
+        <td${p.tracker_id ? ` style="cursor:pointer" onclick="openParticipantHistoryModal(${p.id})"` : ''}>${p.tracker?.battery_level != null ? RT.fmtBattery(p.tracker.battery_level) : '<span class="text-dim">—</span>'}</td>
         <td><span style="color:${STATUS_C[p.status]||'var(--text3)'};font-size:13px;letter-spacing:1px">${(p.status||'dns').toUpperCase()}</span></td>
         <td class="text-dim">${p.age || '—'}</td>
         <td style="text-align:right;white-space:nowrap">
@@ -1978,16 +1981,50 @@ function renderNetworkList() {
   </tbody></table></div>`;
 }
 
-// ── Network node history graph (battery over time, from infra_telemetry — the
-// same ?TELEM? reply/beacon log the HEALTH column's popup reads) ──
+// ── Battery history graph modal ─────────────────────────────────────────────
+// Shared by the Network tab (infra_telemetry, from ?TELEM? replies/beacons)
+// and the Participants tab (tracker_positions). openHistoryModal() is the
+// generic entry point; the two "open*" wrappers below just point it at the
+// right fetch URL.
+const HISTORY_RANGE_OPTS = ['1h', '12h', '24h', '3d', '7d'];
+let historyFetchUrl = null;
+let historyRange = '24h';
+
 async function openNodeHistoryModal(id) {
   const n = infraNodes.find(x => x.id === id);
   if (!n) return;
-  document.getElementById('node-history-modal-title').textContent = `${n.name} — BATTERY HISTORY`;
-  document.getElementById('node-history-chart').innerHTML = '<div class="text-dim" style="padding:20px">Loading…</div>';
+  openHistoryModal(`${n.name} — BATTERY HISTORY`, `/api/races/${selectedRaceId}/infrastructure/${id}/history`);
+}
+
+async function openParticipantHistoryModal(id) {
+  const p = participants.find(x => x.id === id);
+  if (!p) return;
+  openHistoryModal(`${p.name} — BATTERY HISTORY`, `/api/races/${selectedRaceId}/participants/${id}/battery-history`);
+}
+
+function openHistoryModal(title, fetchUrl) {
+  historyFetchUrl = fetchUrl;
+  historyRange = '24h';
+  document.getElementById('node-history-modal-title').textContent = title;
   document.getElementById('node-history-modal').classList.remove('hidden');
-  const res = await RT.get(`/api/races/${selectedRaceId}/infrastructure/${id}/history`);
+  loadHistoryModal();
+}
+
+function setHistoryRange(range) {
+  historyRange = range;
+  loadHistoryModal();
+}
+
+async function loadHistoryModal() {
+  const rangeEl = document.getElementById('node-history-range');
+  if (rangeEl) {
+    rangeEl.innerHTML = HISTORY_RANGE_OPTS.map(r =>
+      `<button class="${r === historyRange ? 'primary' : ''}" style="font-size:13px;padding:2px 10px" onclick="setHistoryRange('${r}')">${r.toUpperCase()}</button>`
+    ).join('');
+  }
   const el = document.getElementById('node-history-chart');
+  el.innerHTML = '<div class="text-dim" style="padding:20px">Loading…</div>';
+  const res = await RT.get(`${historyFetchUrl}?range=${historyRange}`);
   if (!res.ok) { el.innerHTML = `<div class="text-warn" style="padding:20px">${res.error || 'Failed to load history'}</div>`; return; }
   el.innerHTML = renderNodeHistorySvg(res.data);
 }
@@ -2386,6 +2423,34 @@ function setInfraQuery(v) { infraQuery = v; renderInfraList(); }
 let _assignNodeId = null, _assignLongName = null;
 let _infraPeople = []; // [{id, name, type, tracker_id}]
 let trackers = [], infraQuery = '';
+let infraSort = { key: 'node_id', dir: 'asc' };
+
+function setInfraSort(key) {
+  if (infraSort.key === key) infraSort.dir = infraSort.dir === 'asc' ? 'desc' : 'asc';
+  else infraSort = { key, dir: 'asc' };
+  renderInfraList();
+}
+
+const INFRA_SORT_COLS = [
+  { key: 'node_id',       label: 'NODE ID' },
+  { key: 'long_name',     label: 'LONG NAME' },
+  { key: 'short_name',    label: 'SHORT' },
+  { key: 'battery_level', label: 'BATTERY' },
+  { key: 'last_seen',     label: 'LAST SEEN' },
+];
+
+function sortInfraRows(rows) {
+  const { key, dir } = infraSort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * mul;
+    return (av - bv) * mul;
+  });
+}
 
 async function refreshInfra() {
   const [res, ptRes, pnlRes, nodeRes] = await Promise.all([
@@ -2413,12 +2478,14 @@ function renderInfraList() {
   if (!trackers.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No trackers seen yet.</div>'; return; }
   const filtered = RT.filterRows(trackers, infraQuery, [t => t.node_id, t => t.long_name, t => t.short_name]);
   if (!filtered.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No trackers match your search.</div>'; return; }
+  const sorted = sortInfraRows(filtered);
   const now = Math.floor(Date.now() / 1000);
   const missingTimer = (races.find(r=>r.id===activeRaceId))?.missing_timer || 3600;
 
   const assignedCol = selectedRaceId ? '<th>ASSIGNED TO</th>' : '';
-  el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>NODE ID</th><th>LONG NAME</th><th>SHORT</th><th>BATTERY</th><th>LAST SEEN</th><th>POSITION</th>${assignedCol}</tr></thead><tbody>
-    ${filtered.map(t => {
+  el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
+    ${INFRA_SORT_COLS.map(c => `<th class="sortable" onclick="setInfraSort('${c.key}')">${c.label}${infraSort.key === c.key ? `<span class="sort-arrow">${infraSort.dir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</th>`).join('')}<th>POSITION</th>${assignedCol}</tr></thead><tbody>
+    ${sorted.map(t => {
       const missing = t.last_seen && (now - t.last_seen) > missingTimer;
       const age = RT.timeAgo(t.last_seen);
       let assignCell = '';
@@ -2523,6 +2590,35 @@ function renderUsersTab() {
 
 function setUserQuery(v) { userQuery = v; renderUsersList(); }
 
+let userSort = { key: 'username', dir: 'asc' };
+
+function setUserSort(key) {
+  if (userSort.key === key) userSort.dir = userSort.dir === 'asc' ? 'desc' : 'asc';
+  else userSort = { key, dir: 'asc' };
+  renderUsersList();
+}
+
+const USER_SORT_COLS = [
+  { key: 'username',   label: 'USERNAME' },
+  { key: 'role',       label: 'ROLE' },
+  { key: 'callsign',   label: 'CALLSIGN' },
+  { key: 'phone',      label: 'PHONE' },
+  { key: 'created_at', label: 'CREATED' },
+];
+
+function sortUserRows(rows) {
+  const { key, dir } = userSort;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === 'string') return av.localeCompare(bv) * mul;
+    return (av - bv) * mul;
+  });
+}
+
 function aprsPasscode(callsign) {
   const base = callsign.toUpperCase().split('-')[0];
   let hash = 0x73e2;
@@ -2557,14 +2653,16 @@ function renderUsersList() {
   if (!el) return;
   const filtered = RT.filterRows(users, userQuery, [u => u.username, u => u.callsign, u => u.phone]);
   if (!filtered.length) { el.innerHTML = '<div class="text-dim" style="font-size:16px;padding:6px">No users match your search.</div>'; return; }
-  el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>USERNAME</th><th>ROLE</th><th>CALLSIGN</th><th>PHONE</th><th>MARKER</th><th>CREATED</th><th></th></tr></thead><tbody>
-    ${filtered.map(u => `<tr>
+  const sorted = sortUserRows(filtered);
+  el.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
+    ${USER_SORT_COLS.map(c => `<th class="sortable" onclick="setUserSort('${c.key}')">${c.label}${userSort.key === c.key ? `<span class="sort-arrow">${userSort.dir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</th>`).join('')}<th>MARKER</th><th></th></tr></thead><tbody>
+    ${sorted.map(u => `<tr>
       <td>${u.username}${u.id===currentUser.id?' <span class="text-dim">(you)</span>':''}</td>
       <td><span class="badge" style="color:${u.role==='admin'?'var(--accent3)':u.role==='station'?'var(--accent2)':'var(--accent)'}">${u.role.toUpperCase()}</span></td>
       <td style="font-size:13px;color:var(--accent2)">${u.callsign || '<span class="text-dim">—</span>'}</td>
       <td style="font-size:13px">${u.phone || '<span class="text-dim">—</span>'}</td>
-      <td>${RT.SHAPES[u.shape]?.(u.color, 18) || '<span class="text-dim">—</span>'}</td>
       <td class="text-dim">${new Date(u.created_at*1000).toLocaleDateString()}</td>
+      <td>${RT.SHAPES[u.shape]?.(u.color, 18) || '<span class="text-dim">—</span>'}</td>
       <td style="text-align:right">
         <button style="font-size:13px;padding:2px 8px" onclick="openUserModal(${u.id})">EDIT</button>
         ${u.id!==currentUser.id?`<button class="danger" style="font-size:13px;padding:2px 8px" onclick="deleteUser(${u.id})">DEL</button>`:''}
