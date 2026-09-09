@@ -122,40 +122,36 @@ router.get('/', requireAuth, (req, res) => {
   return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
 });
 
-// Recent telemetry history for a single node's modal graph (battery/SNR/RSSI
-// over time). Sourced from tracker_positions, keyed off the *registry* node_id
-// resolved by fetchInfra (which may differ from the infra_nodes.node_id the
-// user typed, e.g. a longname/shortname alias) — nodes that have never
-// beaconed simply have no rows.
+// Recent telemetry history for a single node's modal graph (battery over
+// time, plus RPT/GATE counts where applicable). Sourced from infra_telemetry
+// — the same ?TELEM? reply / status-beacon log that backs the HEALTH column's
+// 24h popup — rather than tracker_positions, which only ever holds Meshtastic
+// GPS-beacon data and is empty for APRS-only devices like repeaters/iGates
+// that report solely via ?TELEM?.
 router.get('/:id/history', requireAuth, (req, res) => {
   const { role, id: userId } = req.session.user;
   const raceId = req.params.raceId;
-
-  let accessible;
-  if (role === 'admin' || role === 'operator') {
-    accessible = fetchInfra(raceId);
-  } else if (role === 'station') {
-    const access = getStationRoleAccess(userId, raceId);
-    accessible = access.full ? fetchInfra(raceId) : (access.stationId ? fetchInfra(raceId, access.stationId) : []);
-  } else {
-    return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
-  }
-
-  const node = accessible.find(n => n.id === parseInt(req.params.id, 10));
+  const node = db.prepare('SELECT * FROM infra_nodes WHERE id = ? AND race_id = ?').get(req.params.id, raceId);
   if (!node) {
     return res.status(404).json({ ok: false, error: 'infrastructure node not found' });
   }
-  if (!node.registry_node_id) {
-    return res.json({ ok: true, data: [] });
+
+  if (role === 'station') {
+    const access = getStationRoleAccess(userId, raceId);
+    if (!access.full && access.stationId !== node.station_id) {
+      return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
+    }
+  } else if (role !== 'admin' && role !== 'operator') {
+    return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
   }
 
   const rows = db.prepare(`
-    SELECT timestamp, battery, snr, rssi FROM (
-      SELECT timestamp, battery, snr, rssi FROM tracker_positions
-      WHERE race_id = ? AND node_id = ?
+    SELECT timestamp, battery_pct, rpt_count, gate_count FROM (
+      SELECT timestamp, battery_pct, rpt_count, gate_count FROM infra_telemetry
+      WHERE infra_node_id = ? AND source != 'poll_missed'
       ORDER BY timestamp DESC LIMIT 500
     ) ORDER BY timestamp ASC
-  `).all(raceId, node.registry_node_id);
+  `).all(node.id);
 
   res.json({ ok: true, data: rows });
 });

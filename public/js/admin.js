@@ -1854,13 +1854,12 @@ function renderNetworkList() {
       <td class="text-dim">${n.node_type}</td>
       <td>${n.station_name || '<span class="text-dim">— Unassigned —</span>'}</td>
       <td>${n.node_id ? `<a href="#" class="text-accent" onclick="openDeviceConfigModal('${n.node_id.replace(/'/g, "\\'")}','${(n.name || '').replace(/'/g, "\\'")}');return false">${n.node_id}</a>` : '<span class="text-dim">—</span>'}</td>
-      <td>${n.battery_level != null ? RT.fmtBattery(n.battery_level) : '—'}</td>
+      <td style="cursor:pointer" onclick="openNodeHistoryModal(${n.id})">${n.battery_level != null ? RT.fmtBattery(n.battery_level) : '—'}</td>
       <td>${n.last_seen ? RT.timeAgo(n.last_seen) : '—'}</td>
       <td class="${{stale:'text-warn', never_seen:'text-dim', ok:'text-ok', warn:'', error:'', missing:''}[n.health]}"
           style="cursor:pointer;font-weight:${n.health==='missing'?'bold':'normal'}${n.health==='warn'?';color:var(--accent4)':''}${n.health==='error'?';color:var(--accent3)':''}${n.health==='missing'?';color:#e53935':''}"
           onclick="openInfraTelemModal(${n.id})">${INFRA_HEALTH_LABEL[n.health]}</td>
       <td style="text-align:right">
-        ${n.registry_node_id ? `<button style="font-size:13px;padding:2px 8px" onclick="openNodeHistoryModal(${n.id})">GRAPH</button>` : ''}
         ${n.node_id ? `<button style="font-size:13px;padding:2px 8px" onclick="pingInfraNode(${n.id})">PING</button>` : ''}
         <button style="font-size:13px;padding:2px 8px" onclick="openInfraNodeModal(${n.id})">EDIT</button>
         <button class="danger" style="font-size:13px;padding:2px 8px" onclick="deleteInfraNode(${n.id})">DEL</button>
@@ -1869,11 +1868,12 @@ function renderNetworkList() {
   </tbody></table></div>`;
 }
 
-// ── Network node history graph (battery/signal over time, from tracker_positions) ──
+// ── Network node history graph (battery over time, from infra_telemetry — the
+// same ?TELEM? reply/beacon log the HEALTH column's popup reads) ──
 async function openNodeHistoryModal(id) {
   const n = infraNodes.find(x => x.id === id);
   if (!n) return;
-  document.getElementById('node-history-modal-title').textContent = `${n.name} — HISTORY`;
+  document.getElementById('node-history-modal-title').textContent = `${n.name} — BATTERY HISTORY`;
   document.getElementById('node-history-chart').innerHTML = '<div class="text-dim" style="padding:20px">Loading…</div>';
   document.getElementById('node-history-modal').classList.remove('hidden');
   const res = await RT.get(`/api/races/${selectedRaceId}/infrastructure/${id}/history`);
@@ -1883,7 +1883,7 @@ async function openNodeHistoryModal(id) {
 }
 
 function renderNodeHistorySvg(points) {
-  const pts = points.filter(p => p.battery != null);
+  const pts = points.filter(p => p.battery_pct != null);
   if (!pts.length) return '<div class="text-dim" style="padding:20px">No battery history recorded yet.</div>';
 
   const W = 620, H = 220, padL = 34, padR = 10, padT = 10, padB = 24;
@@ -1893,11 +1893,11 @@ function renderNodeHistorySvg(points) {
   const x = t => padL + ((t - tMin) / tSpan) * plotW;
   const y = v => padT + (1 - v / 100) * plotH;
 
-  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.timestamp).toFixed(1)},${y(p.battery).toFixed(1)}`).join(' ');
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.timestamp).toFixed(1)},${y(p.battery_pct).toFixed(1)}`).join(' ');
   const gridlines = [0, 25, 50, 75, 100].map(v => `
     <line x1="${padL}" y1="${y(v)}" x2="${W - padR}" y2="${y(v)}" class="hist-grid"/>
     <text x="${padL - 6}" y="${y(v) + 4}" text-anchor="end" class="hist-axis">${v}</text>`).join('');
-  const dots = pts.map(p => `<circle cx="${x(p.timestamp).toFixed(1)}" cy="${y(p.battery).toFixed(1)}" r="2.5" class="hist-dot"><title>${new Date(p.timestamp * 1000).toLocaleString()} — ${p.battery}%</title></circle>`).join('');
+  const dots = pts.map(p => `<circle cx="${x(p.timestamp).toFixed(1)}" cy="${y(p.battery_pct).toFixed(1)}" r="2.5" class="hist-dot"><title>${new Date(p.timestamp * 1000).toLocaleString()} — ${p.battery_pct}%</title></circle>`).join('');
 
   return `
     <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" class="hist-chart">
