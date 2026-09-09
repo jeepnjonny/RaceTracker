@@ -634,11 +634,13 @@
   </div>
 </div>
 
-<!-- Network Node History Modal: simple SVG line graph of a node's recent
-     battery telemetry, pulled from infra_telemetry (?TELEM? replies/beacons). -->
+<!-- Battery History Modal: simple SVG line graph of a node's or participant
+     tracker's recent battery readings. Shared by the Network tab (infra_telemetry)
+     and the Participants tab (tracker_positions) — see openHistoryModal() in admin.js. -->
 <div class="modal-bg hidden" id="node-history-modal">
   <div class="modal modal-wide">
-    <h2 id="node-history-modal-title">NODE HISTORY</h2>
+    <h2 id="node-history-modal-title">BATTERY HISTORY</h2>
+    <div id="node-history-range" style="display:flex;gap:6px;margin-bottom:10px"></div>
     <div id="node-history-chart"></div>
     <div class="modal-footer">
       <button onclick="closeModal('node-history-modal')">CLOSE</button>

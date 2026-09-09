@@ -12,6 +12,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const wsManager = require('../websocket');
 const { getStationRoleAccess } = require('../infra-access');
+const { historySince } = require('../utils/history-range');
 
 const router = express.Router({ mergeParams: true });
 
@@ -145,13 +146,12 @@ router.get('/:id/history', requireAuth, (req, res) => {
     return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
   }
 
+  const since = historySince(req.query.range);
   const rows = db.prepare(`
-    SELECT timestamp, battery_pct, rpt_count, gate_count FROM (
-      SELECT timestamp, battery_pct, rpt_count, gate_count FROM infra_telemetry
-      WHERE infra_node_id = ? AND source != 'poll_missed'
-      ORDER BY timestamp DESC LIMIT 500
-    ) ORDER BY timestamp ASC
-  `).all(node.id);
+    SELECT timestamp, battery_pct, rpt_count, gate_count FROM infra_telemetry
+    WHERE infra_node_id = ? AND source != 'poll_missed' AND timestamp >= ?
+    ORDER BY timestamp ASC LIMIT 5000
+  `).all(node.id, since);
 
   res.json({ ok: true, data: rows });
 });
