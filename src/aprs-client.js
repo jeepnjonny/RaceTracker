@@ -49,6 +49,7 @@ function setWs(ws) {
 function getStatus() {
   return {
     connected: _connected,
+    verified: _loggedIn,
     enabled: !!(currentConfig),
     server: currentConfig?.server,
     filterType: currentConfig?.filterType,
@@ -766,6 +767,16 @@ let _msgSeq = 0;
 
 function sendMessage(toCallsign, text, messageId) {
   if (!socket || !_connected) return false;
+  if (!_loggedIn) {
+    // An unverified login (bad/missing passcode) still connects and receives
+    // fine, but the server silently discards anything we try to transmit —
+    // no error comes back, so without this guard sendMessage looks like it
+    // worked and the caller just burns through 3 retries over ~3 minutes
+    // before finding out. Fail fast and say why. Mirrors igate()'s guard.
+    logger.log('aprs', 'warn', `MSG→${toCallsign.trim()} dropped: APRS-IS login unverified — check the passcode in Settings (it's auto-derived from the callsign, so this usually means the callsign field doesn't match what you're logged in as)`);
+    if (messageId) updateMessageStatus(messageId, 'error');
+    return false;
+  }
   _msgSeq = (_msgSeq % 999) + 1;
   const seq = String(_msgSeq).padStart(3, '0');
   const from = currentConfig.callsign;
