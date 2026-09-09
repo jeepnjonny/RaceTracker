@@ -24,7 +24,7 @@ const FIELD_CODES = {
   SY: { label: 'Symbol',                 type: 'string' },
   BP: { label: 'Beacon path',            type: 'string' },
   DM: { label: 'Digi mode',              type: 'enum',  values: { 0: 'Off', 1: 'WIDE1 fill-in', 2: 'WIDE1+WIDE2 infrastructure' } },
-  BR: { label: 'Beacon rate (min)',      type: 'int',   min: 1,    max: 1440 },
+  BR: { label: 'Beacon rate (sec)',      type: 'int',   min: 1,    max: 86400 },
   GS: { label: 'GPS source',             type: 'enum',  values: { 0: 'Internal GPS', 1: 'Fixed position', 2: 'None' } },
   LA: { label: 'Fixed latitude',         type: 'float', min: -90,  max: 90 },
   LO: { label: 'Fixed longitude',        type: 'float', min: -180, max: 180 },
